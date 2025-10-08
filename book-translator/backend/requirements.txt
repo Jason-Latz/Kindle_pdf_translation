@@ -1,0 +1,2 @@
+# requirements.txt
+# Mirror the minimal dependency list (FastAPI, Celery, SQLAlchemy, etc.) specified in BOOK_TRANSLATOR_PROJECT.md.

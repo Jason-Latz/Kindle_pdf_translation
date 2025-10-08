@@ -1,0 +1,2 @@
+# Dockerfile.backend
+# Containerize the FastAPI backend with Python 3.11 dependencies and Alembic migrations per blueprint.

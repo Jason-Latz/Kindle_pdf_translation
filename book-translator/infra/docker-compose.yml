@@ -1,0 +1,2 @@
+# docker-compose.yml
+# Define services for Postgres, Redis, MinIO, FastAPI backend, Celery worker, and Next.js frontend per blueprint.

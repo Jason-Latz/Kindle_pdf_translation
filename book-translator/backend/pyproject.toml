@@ -1,0 +1,2 @@
+# pyproject.toml
+# Define backend package metadata, dependencies, and tooling for the FastAPI service per blueprint.

@@ -1,0 +1,2 @@
+# Dockerfile.frontend
+# Containerize the Next.js frontend with Node.js and build steps outlined in the blueprint.
