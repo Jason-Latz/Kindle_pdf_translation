@@ -1,2 +1,19 @@
-# requirements.txt
-# Mirror the minimal dependency list (FastAPI, Celery, SQLAlchemy, etc.) specified in BOOK_TRANSLATOR_PROJECT.md.
+fastapi>=0.115
+uvicorn[standard]
+pydantic>=2.7
+sqlalchemy>=2.0
+psycopg[binary]
+alembic
+boto3
+minio
+celery[redis]
+redis
+pymupdf
+jinja2
+ebooklib
+spacy
+wordfreq
+scikit-learn
+httpx
+python-dotenv
+openai>=1.40
