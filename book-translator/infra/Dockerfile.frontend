@@ -1,2 +1,17 @@
-# Dockerfile.frontend
-# Containerize the Next.js frontend with Node.js and build steps outlined in the blueprint.
+FROM node:20-alpine
+
+WORKDIR /app
+
+ENV NODE_ENV=development \
+    NEXT_TELEMETRY_DISABLED=1 \
+    CHOKIDAR_USEPOLLING=true
+
+COPY frontend/package*.json ./ 2>/dev/null || true
+
+RUN if [ -f package.json ] && grep -q '"name"' package.json; then npm install; else echo "Skipping npm install (placeholder package.json)"; fi
+
+COPY frontend/ /app
+
+EXPOSE 3000
+
+CMD ["npm", "run", "dev"]
