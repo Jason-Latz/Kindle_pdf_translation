@@ -1,0 +1,6 @@
+# Ignore local environment secrets and build artifacts
+backend/.env
+frontend/node_modules
+__pycache__/
+*.pyc
+*.log
