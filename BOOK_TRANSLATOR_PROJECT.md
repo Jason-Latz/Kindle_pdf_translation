@@ -64,71 +64,73 @@ DEFAULT_TGT_LANG=es
 ## 3) Repository Layout
 
 ```
-book-translator/
-  README.md
-  infra/
-    docker-compose.yml
-    Dockerfile.backend
-    Dockerfile.frontend
-  frontend/
-    package.json
-    tsconfig.json
-    next.config.js
-    postcss.config.js
-    tailwind.config.js
-    styles/globals.css
-    app/
-      page.tsx
-      job/[id]/page.tsx
-    components/
-      UploadBox.tsx
-      TargetLangSelect.tsx
-      ProgressFeed.tsx
-      DownloadCard.tsx
-    lib/
-      api.ts
-      sse.ts
-  backend/
-    pyproject.toml
-    requirements.txt
-    .env.example
-    .env                 # (local copy; NOT committed)
-    alembic/
-      env.py
-      script.py.mako
-      versions/
-    app/
-      main.py
-      config.py
-      deps.py
-      db/
-        models.py
-        session.py
-        crud.py
-      routers/
-        books.py
-        events.py
-      services/
-        storage.py
-        epub.py
-        flashcards.py
-        normalize.py
-        chaptering.py
-        translation/
-          base.py
-          openai_provider.py
-          # hf_provider.py (post‑MVP)
-      workers/
-        celery_app.py
-        tasks.py
-        stages/
-          parse_pdf.py
-          detect_chapters.py
-          extract_paragraphs.py
-          translate.py
-          assemble_epub.py
-          build_flashcards.py
-          finalize.py
+BOOK_TRANSLATOR_PROJECT.md
+README.md
+Makefile
+.gitignore
+infra/
+  docker-compose.yml
+  Dockerfile.backend
+  Dockerfile.frontend
+frontend/
+  package.json
+  tsconfig.json
+  next.config.js
+  postcss.config.js
+  tailwind.config.js
+  styles/globals.css
+  app/
+    page.tsx
+    job/[id]/page.tsx
+  components/
+    UploadBox.tsx
+    TargetLangSelect.tsx
+    ProgressFeed.tsx
+    DownloadCard.tsx
+  lib/
+    api.ts
+    sse.ts
+backend/
+  pyproject.toml
+  requirements.txt
+  .env.example
+  .env                 # (local copy; NOT committed)
+  alembic/
+    env.py
+    script.py.mako
+    versions/
+  app/
+    main.py
+    config.py
+    deps.py
+    db/
+      models.py
+      session.py
+      crud.py
+    routers/
+      books.py
+      events.py
+    services/
+      storage.py
+      epub.py
+      flashcards.py
+      normalize.py
+      chaptering.py
+      translation/
+        base.py
+        openai_provider.py
+        # hf_provider.py (post‑MVP)
+    workers/
+      celery_app.py
+      tasks.py
+      stages/
+        parse_pdf.py
+        detect_chapters.py
+        extract_paragraphs.py
+        translate.py
+        assemble_epub.py
+        build_flashcards.py
+        finalize.py
 ```
 
 ---
