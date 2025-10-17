@@ -6,11 +6,9 @@ ENV NODE_ENV=development \
     NEXT_TELEMETRY_DISABLED=1 \
     CHOKIDAR_USEPOLLING=true
 
-COPY frontend/package*.json ./ 2>/dev/null || true
+COPY frontend/ /app
 
 RUN if [ -f package.json ] && grep -q '"name"' package.json; then npm install; else echo "Skipping npm install (placeholder package.json)"; fi
-
-COPY frontend/ /app
 
 EXPOSE 3000
 

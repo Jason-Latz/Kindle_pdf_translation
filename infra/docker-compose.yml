@@ -1,4 +1,4 @@
-version: "3.9"
+
 
 services:
   db:
@@ -42,7 +42,7 @@ services:
       - "9000:9000"
       - "9001:9001"
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live"]
+      test: ["CMD", "mc", "ready", "local"]
       interval: 10s
       timeout: 5s
       retries: 5
