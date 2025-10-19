@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from .config import Settings, get_settings
 from .db import ensure_schema, get_session, manifest_path
@@ -15,6 +16,15 @@ from .storage.local import LocalStorage
 from .storage.s3_compat import S3Config, S3Storage
 
 router = APIRouter(tags=["jobs"])
+
+
+class JobStatusResponse(BaseModel):
+    """API response schema for job status information."""
+
+    job_id: str
+    status: str
+    stage: str
+    pct: float
 
 
 def _get_storage(settings: Settings):
@@ -53,7 +63,7 @@ async def create_job(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     tgt_lang: str = Form("es"),
-) -> dict[str, str]:
+) -> JobStatusResponse:
     """
     Accept a PDF upload and schedule the translation pipeline.
 
@@ -82,7 +92,7 @@ async def create_job(
             detail="Unable to persist uploaded file",
         ) from exc
 
-    await _persist_initial_job(
+    job = await _persist_initial_job(
         settings=settings,
         job_id=job_id,
         filename=filename,
@@ -90,13 +100,7 @@ async def create_job(
         source_location=str(source_location),
     )
 
-    raise HTTPException(
-        status_code=501,
-        detail=(
-            "Job creation not implemented yet "
-            f"(storage backend: {settings.storage_backend}, job_id: {job_id})"
-        ),
-    )
+    return job
 
 
 @router.get("/jobs/{job_id}")
@@ -118,7 +122,7 @@ async def _persist_initial_job(
     filename: str,
     tgt_lang: str,
     source_location: str,
-) -> None:
+) -> JobStatusResponse:
     """Record the initial job state using the configured persistence backend."""
     if settings.db_mode == "sqlite":
         await ensure_schema()
@@ -133,7 +137,12 @@ async def _persist_initial_job(
             )
             session.add(job)
             await session.commit()
-        return
+        return JobStatusResponse(
+            job_id=job_id,
+            status="queued",
+            pct=0.0,
+            stage="queued",
+        )
 
     if settings.db_mode == "manifests":
         payload = {
@@ -147,7 +156,12 @@ async def _persist_initial_job(
         }
         path = manifest_path(job_id)
         path.write_text(json.dumps(payload), encoding="utf-8")
-        return
+        return JobStatusResponse(
+            job_id=job_id,
+            status="queued",
+            pct=0.0,
+            stage="queued",
+        )
 
     raise HTTPException(
         status_code=500,
