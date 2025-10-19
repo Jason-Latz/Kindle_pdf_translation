@@ -11,7 +11,7 @@ Refer to `BOOK_TRANSLATOR_PROJECT.md` for the detailed milestone plan.
 
 ## Getting Started
 
-1. `cp .env.example .env` and populate API keys or adjust storage/DB mode.
+1. `cp .env.example .env` and populate API keys or adjust storage/DB mode (keep `TARGET_LANGS` as a JSON array: `["es","fr",...]`).
 2. `make up` to start the backend (and MinIO if enabled).
 3. Visit `http://localhost:8000/docs` to try the API.
 4. Use `curl -F file=@sample.pdf -F tgt_lang=es http://localhost:8000/api/jobs` to kick off a translation.
