@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
@@ -154,7 +155,82 @@ async def read_job(job_id: str) -> JobStatusResponse:
 @router.get("/jobs/{job_id}/download")
 async def download_artifact(job_id: str, file_type: str = "epub") -> StreamingResponse:
     """Stream generated artifacts (`epub` or `flashcards`) once the pipeline finishes."""
-    raise HTTPException(status_code=404, detail=f"Artifact '{file_type}' for job '{job_id}' not available")
+    settings = get_settings()
+    storage = _get_storage(settings)
+
+    if file_type not in {"epub", "flashcards"}:
+        raise HTTPException(
+            status_code=400, detail=f"Unsupported artifact type '{file_type}'"
+        )
+
+    if settings.db_mode == "sqlite":
+        await ensure_schema()
+        async with get_session() as session:
+            job = await session.get(Job, job_id)
+            if job is None:
+                raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+
+            if file_type == "epub":
+                artifact_ref = job.epub_path
+                filename = "book.epub"
+                media_type = "application/epub+zip"
+            else:
+                artifact_ref = job.cards_path
+                filename = "flashcards.csv"
+                media_type = "text/csv"
+
+            if not artifact_ref:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Artifact '{file_type}' for job '{job_id}' not available",
+                )
+    elif settings.db_mode == "manifests":
+        path = manifest_path(job_id)
+        if not path.exists():
+            raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+
+        payload = json.loads(path.read_text(encoding="utf-8"))
+
+        if file_type == "epub":
+            artifact_ref = payload.get("epub_path")
+            filename = "book.epub"
+            media_type = "application/epub+zip"
+        else:
+            artifact_ref = payload.get("cards_path")
+            filename = "flashcards.csv"
+            media_type = "text/csv"
+
+        if not artifact_ref:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Artifact '{file_type}' for job '{job_id}' not available",
+            )
+    else:
+        raise HTTPException(
+            status_code=500, detail=f"Unsupported db mode '{settings.db_mode}'"
+        )
+
+    if isinstance(storage, LocalStorage):
+        artifact_path = Path(artifact_ref)
+        if not artifact_path.exists():
+            raise HTTPException(
+                status_code=404,
+                detail=f"Artifact '{file_type}' for job '{job_id}' not available",
+            )
+        file_handle = storage.open_artifact(artifact_path)
+        response = StreamingResponse(file_handle, media_type=media_type)
+    else:  # S3Storage
+        try:
+            file_handle = storage.open_artifact(artifact_ref)
+        except Exception as exc:  # pragma: no cover - network error path
+            raise HTTPException(
+                status_code=404,
+                detail=f"Artifact '{file_type}' for job '{job_id}' not available",
+            ) from exc
+        response = StreamingResponse(file_handle, media_type=media_type)
+
+    response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
 
 
 async def _persist_initial_job(
