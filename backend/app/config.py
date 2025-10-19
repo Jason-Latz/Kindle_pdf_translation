@@ -2,20 +2,11 @@
 
 from __future__ import annotations
 
-import json
 from functools import lru_cache
 from typing import Literal
 
 from pydantic import AnyHttpUrl, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
-
-def _lenient_json_loads(value: str) -> object:
-    """Attempt to decode JSON, falling back to the raw string on error."""
-    try:
-        return json.loads(value)
-    except json.JSONDecodeError:
-        return value
 
 
 class Settings(BaseSettings):
@@ -47,7 +38,6 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
-        env_json_loads=_lenient_json_loads,
     )
 
     @field_validator("target_langs", mode="before")
