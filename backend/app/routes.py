@@ -26,6 +26,7 @@ class JobStatusResponse(BaseModel):
     status: str
     stage: str
     pct: float
+    error: str | None = None
 
 
 def _get_storage(settings: Settings):
@@ -114,9 +115,40 @@ async def create_job(
 
 
 @router.get("/jobs/{job_id}")
-async def read_job(job_id: str) -> dict[str, str]:
+async def read_job(job_id: str) -> JobStatusResponse:
     """Return the current status for a translation job."""
-    raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+    settings = get_settings()
+
+    if settings.db_mode == "sqlite":
+        await ensure_schema()
+        async with get_session() as session:
+            job = await session.get(Job, job_id)
+            if job is None:
+                raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+            return JobStatusResponse(
+                job_id=job.id,
+                status=job.status,
+                stage=job.stage,
+                pct=float(job.pct),
+                error=job.error,
+            )
+
+    if settings.db_mode == "manifests":
+        path = manifest_path(job_id)
+        if not path.exists():
+            raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return JobStatusResponse(
+            job_id=payload.get("id", job_id),
+            status=payload.get("status", "queued"),
+            stage=payload.get("stage", "queued"),
+            pct=float(payload.get("pct", 0.0)),
+            error=payload.get("error"),
+        )
+
+    raise HTTPException(
+        status_code=500, detail=f"Unsupported db mode '{settings.db_mode}'"
+    )
 
 
 @router.get("/jobs/{job_id}/download")
@@ -152,6 +184,7 @@ async def _persist_initial_job(
             status="queued",
             pct=0.0,
             stage="queued",
+            error=None,
         )
 
     if settings.db_mode == "manifests":
@@ -163,6 +196,7 @@ async def _persist_initial_job(
             "pct": 0.0,
             "stage": "queued",
             "source": source_location,
+            "error": None,
         }
         path = manifest_path(job_id)
         path.write_text(json.dumps(payload), encoding="utf-8")
@@ -171,6 +205,7 @@ async def _persist_initial_job(
             status="queued",
             pct=0.0,
             stage="queued",
+            error=None,
         )
 
     raise HTTPException(
