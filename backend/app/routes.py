@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import json
 from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
 from .config import Settings, get_settings
+from .db import ensure_schema, get_session, manifest_path
+from .models import Job
 from .storage.local import LocalStorage
 from .storage.s3_compat import S3Config, S3Storage
 
@@ -79,6 +82,14 @@ async def create_job(
             detail="Unable to persist uploaded file",
         ) from exc
 
+    await _persist_initial_job(
+        settings=settings,
+        job_id=job_id,
+        filename=filename,
+        tgt_lang=normalized_lang,
+        source_location=str(source_location),
+    )
+
     raise HTTPException(
         status_code=501,
         detail=(
@@ -98,3 +109,47 @@ async def read_job(job_id: str) -> dict[str, str]:
 async def download_artifact(job_id: str, file_type: str = "epub") -> StreamingResponse:
     """Stream generated artifacts (`epub` or `flashcards`) once the pipeline finishes."""
     raise HTTPException(status_code=404, detail=f"Artifact '{file_type}' for job '{job_id}' not available")
+
+
+async def _persist_initial_job(
+    *,
+    settings: Settings,
+    job_id: str,
+    filename: str,
+    tgt_lang: str,
+    source_location: str,
+) -> None:
+    """Record the initial job state using the configured persistence backend."""
+    if settings.db_mode == "sqlite":
+        await ensure_schema()
+        async with get_session() as session:
+            job = Job(
+                id=job_id,
+                filename=filename,
+                tgt_lang=tgt_lang,
+                status="queued",
+                pct=0.0,
+                stage="queued",
+            )
+            session.add(job)
+            await session.commit()
+        return
+
+    if settings.db_mode == "manifests":
+        payload = {
+            "id": job_id,
+            "filename": filename,
+            "tgt_lang": tgt_lang,
+            "status": "queued",
+            "pct": 0.0,
+            "stage": "queued",
+            "source": source_location,
+        }
+        path = manifest_path(job_id)
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        return
+
+    raise HTTPException(
+        status_code=500,
+        detail=f"Unsupported db mode '{settings.db_mode}'",
+    )
