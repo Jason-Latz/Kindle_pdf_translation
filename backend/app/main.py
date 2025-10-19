@@ -20,6 +20,12 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(api_router, prefix="/api")
+
+    @app.get("/health")
+    def healthcheck() -> dict[str, str]:
+        """Simple readiness endpoint for local and container health checks."""
+        return {"status": "ok"}
+
     return app
 
 
