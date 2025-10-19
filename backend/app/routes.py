@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
+from uuid import uuid4
+
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
 from .config import Settings, get_settings
@@ -38,11 +40,16 @@ def _get_storage(settings: Settings):
     )
 
 
+def _normalize_lang(value: str) -> str:
+    """Lowercase and trim user/config language codes."""
+    return value.lower().strip().strip("[]").strip('"').strip("'")
+
+
 @router.post("/jobs", status_code=202)
 async def create_job(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    tgt_lang: str = "es",
+    tgt_lang: str = Form("es"),
 ) -> dict[str, str]:
     """
     Accept a PDF upload and schedule the translation pipeline.
@@ -52,11 +59,31 @@ async def create_job(
     settings = get_settings()
     storage = _get_storage(settings)
 
+    allowed_langs = {_normalize_lang(lang) for lang in settings.target_langs if lang}
+    normalized_lang = _normalize_lang(tgt_lang)
+    if normalized_lang not in allowed_langs:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Target language '{tgt_lang}' is not supported",
+        )
+
+    job_id = uuid4().hex
+    filename = file.filename or "upload.pdf"
+
+    try:
+        file.file.seek(0)
+        source_location = storage.save_upload(job_id, filename, file.file)
+    except Exception as exc:  # pragma: no cover - defensive logging path
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to persist uploaded file",
+        ) from exc
+
     raise HTTPException(
         status_code=501,
         detail=(
             "Job creation not implemented yet "
-            f"(storage backend: {settings.storage_backend})"
+            f"(storage backend: {settings.storage_backend}, job_id: {job_id})"
         ),
     )
 
