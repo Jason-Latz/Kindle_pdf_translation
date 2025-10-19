@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from .config import Settings, get_settings
 from .db import ensure_schema, get_session, manifest_path
 from .models import Job
+from .pipeline import PipelineContext, run_pipeline
 from .storage.local import LocalStorage
 from .storage.s3_compat import S3Config, S3Storage
 
@@ -98,6 +99,15 @@ async def create_job(
         filename=filename,
         tgt_lang=normalized_lang,
         source_location=str(source_location),
+    )
+
+    background_tasks.add_task(
+        run_pipeline,
+        PipelineContext(
+            job_id=job_id,
+            source_path=str(source_location),
+            target_lang=normalized_lang,
+        ),
     )
 
     return job
