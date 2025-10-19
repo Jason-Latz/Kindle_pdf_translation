@@ -10,17 +10,15 @@ WORKDIR /app
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential \
-        libpq-dev \
-        curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY backend/requirements.txt /tmp/requirements.txt
+COPY requirements.txt /tmp/requirements.txt
 
 RUN python -m pip install --upgrade pip \
     && if [ -s /tmp/requirements.txt ]; then pip install -r /tmp/requirements.txt; fi \
     && pip install watchfiles
 
-COPY backend /app
+COPY . /app
 
 EXPOSE 8000
 

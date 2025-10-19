@@ -1,350 +1,341 @@
-# Book Translator & Flashcards — Project Blueprint
+# Book Translator — Lean Build Plan
 
-A production‑style MVP that ingests a **text‑based PDF** of a book, **translates** it from **English → {Spanish, French, German, Italian, Portuguese}**, generates **per‑chapter flashcards**, and outputs a **Kindle‑ready EPUB** plus a **CSV** of flashcards.
+This is a pragmatic, end-to-end roadmap for the Book Translator MVP. It removes Celery/Redis, avoids AWS services for now, and defers Postgres. You still build the same core features with a simplified stack: FastAPI, SQLite (or JSON manifests), and local or MinIO storage.
 
-This document is optimized for dropping into your ChatGPT Project folder as the single source of truth for you (and any coding agent).
-
----
-
-## 0) Goals and Non‑Goals
-
-**Goals**
-- Upload a text‑based PDF; no OCR in MVP.
-- Parse and segment by **chapters** and **paragraphs**.
-- Translate with **OpenAI API** (MVP) with a **pluggable** design for **Hugging Face** later.
-- Generate **rarity‑scored flashcards** per chapter.
-- Assemble a clean **EPUB** with TOC and metadata.
-- Ship quickly with a modern, resume‑relevant stack.
-
-**Non‑Goals (MVP)**
-- OCR for scanned PDFs.
-- Authentication / multi‑tenant accounts.
-- DOCX/PDF export (EPUB only).
+> **Build order:** Infra → Backend → Pipeline → (Optional) Frontend → Tests/Polish  
+> **Strategy:** Ship fast with a single-process FastAPI app that uses `BackgroundTasks`. Later, swap in Postgres/Redis/S3 with minimal changes.
 
 ---
 
-## 1) Tech Stack Summary
+## Milestone 0 — Bootstrap the Repo & Containers
 
-- **Frontend:** Next.js (React + TypeScript + TailwindCSS).  
-- **Backend:** FastAPI (Python 3.11), Pydantic v2, Uvicorn.  
-- **Workers:** Celery 5 + Redis broker (background stages).  
-- **DB:** PostgreSQL 15 + SQLAlchemy 2 + Alembic (migrations).  
-- **Storage:** MinIO locally, **S3** in production.  
-- **Parsing:** PyMuPDF (fitz).  
-- **NLP:** spaCy models (es, fr, de, it, pt), `wordfreq`, TF‑IDF (scikit‑learn).  
-- **Translation (MVP):** OpenAI `gpt-4o-mini` (configurable).  
-- **EPUB:** `ebooklib` + Jinja2 XHTML templates.  
-- **Containerization:** Docker + Docker Compose.  
-- **Deployment target:** AWS ECS Fargate or Fly.io (post‑MVP).
+### Implement
 
----
+- Create folders per the layout below.
+- Add `infra/docker-compose.yml` with services: `backend` and optional `minio`.
+- Copy `.env.example` to `.env` and fill keys (OpenAI, storage mode).
+- Add a backend `Dockerfile`; mount volumes for hot reload while developing.
+- Add Make targets: `make up`, `make down`, `make logs`, `make sh.backend`.
 
-## 2) Guardrails & Limits
-
-Set as environment variables in `backend/.env`:
+### Repo Layout
 
 ```
-MAX_UPLOAD_MB=100
-MAX_PAGES=600
-MAX_CHARACTERS=1200000
-MAX_PARAGRAPHS=50000
-MAX_CHAPTERS=200
-SUPPORTED_TGT_LANGS=es,fr,de,it,pt
-DEFAULT_SRC_LANG=en
-DEFAULT_TGT_LANG=es
-```
-
-**Validation rules**
-- Reject encrypted PDFs, PDFs with embedded JS, or **image‑only** PDFs (add OCR later).  
-- Count total characters pre‑translation; abort over `MAX_CHARACTERS`.  
-- **Deduplicate** paragraph translations by SHA‑1 to avoid re‑billing.
-
----
-
-## 3) Repository Layout
-
-```
-BOOK_TRANSLATOR_PROJECT.md
-README.md
-Makefile
-.gitignore
-infra/
-  docker-compose.yml
-  Dockerfile.backend
-  Dockerfile.frontend
-frontend/
-  package.json
-  tsconfig.json
-  next.config.js
-  postcss.config.js
-  tailwind.config.js
-  styles/globals.css
-  app/
-    page.tsx
-    job/[id]/page.tsx
-  components/
-    UploadBox.tsx
-    TargetLangSelect.tsx
-    ProgressFeed.tsx
-    DownloadCard.tsx
-  lib/
-    api.ts
-    sse.ts
-backend/
-  pyproject.toml
-  requirements.txt
+book-translator/
+  backend/
+    app/
+      main.py
+      routes.py
+      config.py
+      db.py                 # SQLite or JSON manifests
+      models.py             # Minimal Job table if using SQLite
+      pipeline/             # extract.py, translate.py, build_epub.py, flashcards.py
+      providers/            # base.py, openai_provider.py, hf_stub_provider.py
+      storage/              # local.py, s3_compat.py
+      utils/                # ids.py, logging.py, locks.py
+    tests/
+    Dockerfile
+    pyproject.toml (or requirements.txt)
+  infra/
+    docker-compose.yml
+  data/                     # uploads, artifacts, manifests, db file
+  objectdata/               # MinIO object store (if enabled)
+  .github/workflows/ci.yml
   .env.example
-  .env                 # (local copy; NOT committed)
-  alembic/
-    env.py
-    script.py.mako
-    versions/
-  app/
-    main.py
-    config.py
-    deps.py
-    db/
-      models.py
-      session.py
-      crud.py
-    routers/
-      books.py
-      events.py
-    services/
-      storage.py
-      epub.py
-      flashcards.py
-      normalize.py
-      chaptering.py
-      translation/
-        base.py
-        openai_provider.py
-        # hf_provider.py (post‑MVP)
-    workers/
-      celery_app.py
-      tasks.py
-      stages/
-        parse_pdf.py
-        detect_chapters.py
-        extract_paragraphs.py
-        translate.py
-        assemble_epub.py
-        build_flashcards.py
-        finalize.py
+  README.md
 ```
 
----
+### `infra/docker-compose.yml`
 
-## 4) Environment & Secrets
+```yaml
+version: "3.9"
+services:
+  backend:
+    build: ./backend
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    env_file: ./.env
+    volumes:
+      - ./backend:/app
+      - ./data:/data
+    ports:
+      - "8000:8000"
+    depends_on:
+      - minio
 
-`backend/.env.example` (copy to `.env` and fill `OPENAI_API_KEY`):
-
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: minio123
+    volumes:
+      - ./objectdata:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
 ```
-APP_ENV=dev
-DATABASE_URL=postgresql+psycopg://postgres:postgres@db:5432/books
-REDIS_URL=redis://redis:6379/0
 
-S3_ENDPOINT_URL=http://minio:9000
-S3_REGION=us-east-1
+> If you want zero S3 right now, comment out the `minio` service and set `STORAGE_BACKEND=local`.
+
+### `.env.example`
+
+```dotenv
+# Provider
+TRANSLATOR_PROVIDER=openai          # or hf
+OPENAI_API_KEY=sk-...
+
+# Storage
+STORAGE_BACKEND=local               # local | s3
+S3_ENDPOINT=http://minio:9000       # MinIO in dev; leave empty for AWS later
+S3_ACCESS_KEY=minio
+S3_SECRET_KEY=minio123
 S3_BUCKET=book-translator
-S3_ACCESS_KEY=minioadmin
-S3_SECRET_KEY=minioadmin
 
-OPENAI_API_KEY=replace_me
-OPENAI_MODEL=gpt-4o-mini
+# DB
+DB_MODE=sqlite                      # sqlite | manifests
+DB_URL=sqlite+aiosqlite:///./data/app.db
 
-# Limits
-MAX_UPLOAD_MB=100
+# App limits
+MAX_PDF_MB=100
 MAX_PAGES=600
-MAX_CHARACTERS=1200000
-MAX_PARAGRAPHS=50000
-MAX_CHAPTERS=200
-
-# Languages
-SUPPORTED_TGT_LANGS=es,fr,de,it,pt
-DEFAULT_SRC_LANG=en
-DEFAULT_TGT_LANG=es
+TARGET_LANGS=es,fr,de,it,pt
 ```
 
-Frontend `.env.local` (if needed):
-```
-NEXT_PUBLIC_API_BASE=http://localhost:8000
-```
+### Prove It Works
+
+- `docker compose up -d` → backend healthy.
+- Visit `http://localhost:9001` (MinIO) if enabled.
+- `GET /healthz` returns 200.
 
 ---
 
-## 5) Core API & Flows
+## Milestone 1 — FastAPI Skeleton, Settings, and DB/Manifests
 
-**Endpoints**
-- `POST /api/books` → create book, return **signed PUT URL** + `book_id`.
-- PUT file to signed URL (direct to MinIO/S3).
-- `POST /api/books/{id}/upload-complete` → enqueue pipeline; status = `UPLOADED`.
-- `GET /api/books/{id}` → status, files (EPUB, CSV).
-- `GET /api/books/{id}/events` → **SSE** progress stream (`{stage, pct, detail}`).
+### Implement
 
-**Stages**
-`UPLOADED → PARSED → CHAPTERED → EXTRACTED → TRANSLATING → ASSEMBLING → FLASHCARDS → COMPLETE`
+- `main.py`: create `FastAPI()` with CORS and `/healthz`.
+- `config.py`: Pydantic Settings for OpenAI, storage mode, and limits.
+- Choose SQLite (simpler) or JSON manifests:
+  - SQLite: `db.py`, `models.py` define a `Job` table (fields: `id`, `filename`, `tgt_lang`, `status`, `pct`, `stage`, `error`, `created_at`, `epub_path`, `cards_path`).
+  - Manifests: store per-job JSON at `data/manifests/{job_id}.json`.
 
----
+### Prove It Works
 
-## 6) Worker Pipeline (Celery)
-
-1. **parse_pdf**: PyMuPDF extract, reject encrypted/image‑only, write `artifacts/pages.json`.  
-2. **detect_chapters**: heuristics (font size spikes, “Chapter …”, roman numerals), write `chapters`.  
-3. **extract_paragraphs**: merge lines, fix hyphenation, strip headers/footers, compute `sha1`, enforce limits, write `paragraphs`.  
-4. **translate**: batch by token estimate, prompt OpenAI (temperature 0), save `translations` (dedupe by `(paragraph_id, engine, tgt_lang)`).  
-5. **assemble_epub**: render XHTML with Jinja2, build EPUB via `ebooklib`, set `dc:language = lang_tgt`, upload file.  
-6. **build_flashcards**: spaCy tokenize/lemma/POS, TF‑IDF + `wordfreq` Zipf rarity; per lemma call OpenAI for **short definition** and **one example sentence** grounded in book context; write `flashcards.csv`.  
-7. **finalize**: status → COMPLETE.
-
-**Progress updates**: each stage writes to `jobs` table; SSE polls or uses Redis pub/sub for push.
+- `GET /healthz` returns 200.
+- SQLite file (`./data/app.db`) or manifests folder created.
 
 ---
 
-## 7) Translation Provider Interface
+## Milestone 2 — Storage Service + Upload Flow
 
-```python
-# app/services/translation/base.py
-from typing import List
+### Implement
 
-class Translator:
-    async def translate_batch(self, texts: List[str], src: str, tgt: str) -> List[str]:
-        raise NotImplementedError
-```
+- `storage/local.py`
+  - `save_upload(file, dst_path)` → saves to `./data/uploads/{job_id}/source.pdf`.
+  - `open_artifact(path)` → stream file from disk.
+- `storage/s3_compat.py`
+  - `boto3.client()` with `endpoint_url=S3_ENDPOINT` (MinIO).
+  - Wrap `put_object` / `get_object` helpers.
+- Endpoints
+  - `POST /api/jobs` (multipart form: file + `tgt_lang`)
+    - Create `job_id`.
+    - Save file (local or S3-compatible).
+    - Enqueue background pipeline (next milestone).
+    - Return `{job_id, status: "queued"}`.
+  - `GET /api/jobs/{id}` → return job status (from DB or manifest).
+  - `GET /api/jobs/{id}/download?type=epub|flashcards` → stream artifact.
 
-**OpenAI provider (MVP)**: `openai_provider.py` implements `translate_batch`.  
-**Hugging Face provider (later)**: `hf_provider.py` loads NLLB/M2M100 on **Apple Silicon (MPS)**.
+### Prove It Works
 
----
-
-## 8) Flashcards — Scoring & Content
-
-- **Filter**: stopwords, numbers, named entities; optionally down‑weight proper nouns.  
-- **Score**: `score = 0.7*(maxZipf - Zipf(token, lang)) + 0.3*TFIDF(token, chapter)`; small POS boosts for NOUN/VERB/ADJ.  
-- **Select**: top **N=20** per chapter (configurable).  
-- **Generate content**: OpenAI returns **definition** (in target language) and **one example** sentence (preferably sourced or paraphrased from the chapter).  
-- **Export**: `flashcards.csv` columns → `chapter_idx, word, lemma, pos, rarity_score, definition, example`.
-
----
-
-## 9) Frontend UX
-
-- **Upload page**: file picker + **Target Language** dropdown. POST `/api/books` → PUT to signed URL → POST `upload-complete` → redirect to job page.  
-- **Job page**: open SSE, show stage/pct, when COMPLETE show **Download** buttons (EPUB, CSV).  
-- **Errors**: clear messages for size, pages, characters, encryption, image‑only PDFs.
+- Upload a small PDF via `curl` or Swagger UI.
+- File saved under `./data/uploads/...`; job record or manifest exists.
 
 ---
 
-## 10) Local Dev — One‑Command Bring‑Up
+## Milestone 3 — Background Pipeline & Progress
 
-From repo root:
+### Implement
+
+- Use FastAPI `BackgroundTasks` to kick off `run_pipeline(job_id)`.
+- Pipeline stages:
+  1. `parse_pdf` → `stage="parse_pdf"`, `pct≈10`
+  2. `translate` → `stage="translate"`, update progress
+  3. `build_epub` → `stage="build_epub"`, `pct≈90`
+  4. `flashcards` → `stage="flashcards"`, `pct≈98`
+  5. `finalize` → `status="done"`, `pct=100`
+- Write progress to SQLite (or manifest JSON).
+- Optional SSE endpoint `/api/jobs/{id}/events`; otherwise poll `GET /api/jobs/{id}`.
+
+### Prove It Works
+
+- Start a job; `GET /api/jobs/{id}` shows stage/pct updating until `done`.
+- Log file `data/logs/{job_id}.log` records messages.
+
+---
+
+## Milestone 4 — PDF Parsing
+
+### Implement
+
+- `pipeline/extract.py` using PyMuPDF or `pdfminer.six`:
+  - Validate limits (size, pages).
+  - Reject encrypted/image-only PDFs.
+  - Extract text blocks; normalize whitespace; merge lines; dehyphenate.
+  - Strip repeated headers/footers; chunk into paragraphs.
+- Save paragraph JSON at `./data/artifacts/{job_id}/paragraphs.json`.
+
+### Prove It Works
+
+- For a sample PDF, paragraphs JSON looks sane (counts match, clean text).
+
+---
+
+## Milestone 5 — Translation Provider (OpenAI MVP)
+
+### Implement
+
+- `providers/base.py`: defines `translate_batch(texts, src, tgt) -> list[str]`.
+- `providers/openai_provider.py`: batch paragraphs by tokens, call OpenAI.
+- `providers/hf_stub_provider.py`: mock responses (Apple Silicon stub).
+- `pipeline/translate.py`: iterate paragraphs, translate, retry on rate limits.
+
+### Prove It Works
+
+- End-to-end run on short PDF; translated paragraph count equals source count.
+
+---
+
+## Milestone 6 — EPUB Assembly
+
+### Implement
+
+- `pipeline/build_epub.py` using `ebooklib`:
+  - Build a simple EPUB with one or more chapters.
+  - Add metadata (title, language).
+  - Save to:
+    - `./data/artifacts/{job_id}/book.epub` for local storage, or
+    - `artifacts/{job_id}/book.epub` in MinIO when `STORAGE_BACKEND=s3`.
+
+### Prove It Works
+
+- EPUB opens in Apple Books/Calibre; content is translated.
+
+---
+
+## Milestone 7 — Flashcards CSV
+
+### Implement
+
+- `pipeline/flashcards.py`:
+  - Tokenize translated text (spaCy or simple split).
+  - Rank words by frequency × rarity (`wordfreq.zipf_frequency`).
+  - Select top N per chapter; call OpenAI for definition + example.
+  - Write `flashcards.csv` at `./data/artifacts/{job_id}/`.
+- Update job status.
+
+### Prove It Works
+
+- `flashcards.csv` contains 10–30 reasonable entries with definitions.
+
+---
+
+## Milestone 8 — Minimal Frontend (Optional)
+
+### Implement
+
+- Static `index.html` under `/` or a simple Next.js page:
+  - File picker, target-language dropdown.
+  - POST to `/api/jobs`; poll `/api/jobs/{id}` for progress.
+  - Display download links when done.
+
+### Prove It Works
+
+- Upload → translate → download — all through browser.
+
+---
+
+## Milestone 9 — Tests, CI, and Public URL
+
+### Implement
+
+- Tests: small unit tests + one end-to-end sample PDF.
+- CI: `.github/workflows/ci.yml` runs lint, pytest, docker build.
+- Public URL:
+  - Instant: Cloudflare Tunnel or ngrok.
+  - Stable: Deploy Docker container to Fly.io or Render.
+
+### Prove It Works
+
+- CI passes; pytest green; live URL serves `/docs`.
+
+---
+
+## Acceptance Checklist
+
+- [ ] Upload valid text PDF (<100 MB, <600 pages).
+- [ ] Pipeline runs parse → translate → EPUB → flashcards.
+- [ ] Progress visible via `/api/jobs/{id}` or SSE.
+- [ ] EPUB and CSV downloadable and valid.
+- [ ] Clear errors for invalid PDFs or limits.
+
+---
+
+## Future Upgrades (Swap-In Ready)
+
+| Feature         | Current                 | Later Upgrade             |
+| --------------- | ----------------------- | ------------------------- |
+| Database        | SQLite or manifests     | Postgres (via DB_URL env) |
+| Storage         | Local or MinIO          | AWS S3                    |
+| Background jobs | BackgroundTasks         | Celery + Redis            |
+| Deployment      | Local / Fly.io / Render | AWS ECS Fargate           |
+
+Typical upgrade time per component:
+
+- Postgres: 30–60 min (no data) / 1–3 h (with migration).
+- AWS S3: ~30 min (switch endpoint + creds).
+- ECS deploy: 3–6 h initial setup.
+
+---
+
+## Command Reference
 
 ```bash
-docker compose -f infra/docker-compose.yml up --build
-```
-Then run initial migration (inside backend container):
-```bash
-alembic upgrade head
-```
+make up            # start backend (+ minio if enabled)
+make down          # stop containers
+make logs          # tail backend logs
 
-Visit:  
-- API docs → http://localhost:8000/docs  
-- Frontend → http://localhost:3000
+# Start a job
+curl -F file=@sample.pdf -F tgt_lang=es http://localhost:8000/api/jobs
 
----
+# Check status
+curl http://localhost:8000/api/jobs/<id>
 
-## 11) Minimal Dependency Lists
+# Share a public URL quickly (pick one)
+cloudflared tunnel --url http://localhost:8000
+# or
+ngrok http 8000
 
-**backend/requirements.txt**
-```
-fastapi>=0.115
-uvicorn[standard]
-pydantic>=2.7
-sqlalchemy>=2.0
-psycopg[binary]
-alembic
-boto3
-minio
-celery[redis]
-redis
-pymupdf
-jinja2
-ebooklib
-spacy
-wordfreq
-scikit-learn
-httpx
-python-dotenv
-openai>=1.40
-```
-
-**frontend/package.json (key deps)**
-```json
-{
-  "dependencies": {
-    "next": "14.x",
-    "react": "18.x",
-    "react-dom": "18.x",
-    "typescript": "^5",
-    "tailwindcss": "^3",
-    "autoprefixer": "^10",
-    "postcss": "^8",
-    "axios": "^1"
-  }
-}
+# Run tests
+pytest -q
 ```
 
 ---
 
-## 12) Acceptance Criteria (MVP)
+## Working Style — Pair with AI
 
-- Upload a valid text‑PDF under **100 MB** and **600 pages**.  
-- Choose **es/fr/de/it/pt**; pipeline runs through all stages.  
-- Output **EPUB** opens in Kindle/Apple Books with a working TOC; text is fully translated.  
-- **flashcards.csv** contains **10–30** sensible rare terms per chapter with definitions and examples in the target language.  
-- Re‑runs are **idempotent** (no duplicate rows, no re‑billing).  
-- Limits and errors surface clearly to the user.
+1. State the goal (e.g., “implement `/api/jobs` upload endpoint”).
+2. Paste the relevant files and ask for minimal diffs.
+3. Run immediately; share the first traceback.
+4. Iterate until green, then commit.
 
----
+Prompt template:
 
-## 13) Stretch Goals (Post‑MVP)
-
-- **Hugging Face** provider (NLLB/M2M100) on Apple Silicon (MPS).  
-- OCR fallback (Tesseract) for scanned PDFs.  
-- Anki `.apkg` export (`genanki`).  
-- AWS ECS Fargate deployment; S3 in production; GitHub Actions CI.  
-- Glossary rules and constrained decoding for terminology fidelity.
+```
+Goal: implement <small feature>.
+Context: <relevant files>.
+Constraints: minimal changes, FastAPI BackgroundTasks, Pydantic v2, SQLAlchemy 2 (if using SQLite).
+Deliver: unified diff or exact file contents.
+```
 
 ---
 
-## 14) Folder Setup Instructions (ChatGPT Project)
-
-1. Create a **ChatGPT Project** named `book-translator`.  
-2. Add this file as `BOOK_TRANSLATOR_PROJECT.md` at the repo root.  
-3. Create subfolders exactly as shown in **Repository Layout**.  
-4. Place Docker files under `infra/` and copy the env templates.  
-5. Implement backend first (models → storage → routers → workers → stages), then frontend (upload + job pages).  
-6. Use this doc as the **authoritative task list** for your coding agent; work top‑to‑bottom by sections 4 → 11.  
-
----
-
-## 15) Interview Talking Points (Hugging Face angle)
-
-- **Pluggable translator** interface; OpenAI (MVP) + **HF NLLB/M2M100** local path.  
-- **Length bucketing + dynamic batching** to maximize MPS throughput.  
-- **Glossary preservation** via sentinel masking, numeric & punctuation integrity checks.  
-- **Quality checks** with chrF/COMET on a small canary set (post‑MVP).
-
----
-
-## 16) Quick Start Checklist
-
-- [ ] `docker compose up` starts Postgres, Redis, MinIO, FastAPI, Celery worker, Next.js.  
-- [ ] `alembic upgrade head` creates tables.  
-- [ ] Upload a small sample PDF → see progress events.  
-- [ ] Download EPUB and CSV; open and verify.  
-- [ ] Re‑run same PDF → no double charges, no duplicate rows.
-
----
-
-**End of document.**
+Happy shipping!

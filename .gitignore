@@ -1,5 +1,8 @@
 # Ignore local environment secrets and build artifacts
+.env
 backend/.env
+data/
+objectdata/
 frontend/node_modules
 frontend/.next/
 frontend/.turbo/
