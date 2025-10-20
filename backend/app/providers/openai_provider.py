@@ -59,7 +59,6 @@ class OpenAIProvider(TranslationProvider):
         )
 
         translations: list[str] = []
-        offset = 0
         for batch in batches:
             response = await self._client.responses.create(
                 model=self.model,
@@ -80,7 +79,6 @@ class OpenAIProvider(TranslationProvider):
                     f"(expected {len(batch)}, received {len(batch_translations)})"
                 )
             translations.extend(batch_translations)
-            offset += len(batch)
 
         return translations
 

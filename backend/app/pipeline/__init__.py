@@ -16,6 +16,7 @@ from ..storage.local import LocalStorage
 from ..storage.s3_compat import S3Config, S3Storage
 from ..utils.logging import configure_logging
 from .extract import extract_paragraphs
+from .translate import translate_paragraphs
 
 
 @dataclass(slots=True)
@@ -177,14 +178,59 @@ async def run_pipeline(context: PipelineContext) -> None:
             storage.put_artifact(key, BytesIO(paragraph_bytes.encode("utf-8")))
             paragraphs_location = key
 
+        extra_payload: dict[str, object] = {}
+        if paragraphs_location and settings.db_mode == "manifests":
+            extra_payload["paragraphs_path"] = paragraphs_location
+
         await _update_job_state(
             context.job_id,
             status="processing",
             stage="parse_pdf",
             pct=30.0,
-            extra={"paragraphs_path": paragraphs_location} if paragraphs_location and settings.db_mode == "manifests" else None,
+            extra=extra_payload if extra_payload else None,
         )
         logger.info("Extracted %d paragraphs from PDF", len(paragraphs))
+
+        await _update_job_state(
+            context.job_id,
+            status="processing",
+            stage="translate",
+            pct=40.0,
+        )
+
+        async def _translate_progress(progress: float) -> None:
+            pct = 40.0 + (progress * 35.0)
+            await _update_job_state(
+                context.job_id,
+                status="processing",
+                stage="translate",
+                pct=pct,
+            )
+
+        translations, translations_location = await translate_paragraphs(
+            context.job_id,
+            storage,
+            target_lang=context.target_lang,
+            paragraphs=paragraphs,
+            paragraphs_location=paragraphs_location,
+            progress_callback=_translate_progress,
+        )
+
+        if settings.db_mode == "manifests" and translations_location:
+            extra_payload["translations_path"] = translations_location
+
+        await _update_job_state(
+            context.job_id,
+            status="processing",
+            stage="translate",
+            pct=75.0,
+            extra=extra_payload if extra_payload else None,
+        )
+        logger.info(
+            "Translated %d paragraphs to %s",
+            len(translations),
+            context.target_lang,
+        )
 
         artifact_name = "book.epub"
         if isinstance(storage, LocalStorage):
@@ -196,6 +242,14 @@ async def run_pipeline(context: PipelineContext) -> None:
             storage.put_artifact(key, BytesIO(b"stub"))
             artifact_location = key
 
+        final_extra: dict[str, object] | None = None
+        if settings.db_mode == "manifests":
+            final_extra = dict(extra_payload)
+            if paragraphs_location and "paragraphs_path" not in final_extra:
+                final_extra["paragraphs_path"] = paragraphs_location
+            if translations_location and "translations_path" not in final_extra:
+                final_extra["translations_path"] = translations_location
+
         await _update_job_state(
             context.job_id,
             status="done",
@@ -203,7 +257,7 @@ async def run_pipeline(context: PipelineContext) -> None:
             pct=100.0,
             error=None,
             epub_path=artifact_location,
-            extra={"paragraphs_path": paragraphs_location} if paragraphs_location and settings.db_mode == "manifests" else None,
+            extra=final_extra if final_extra else None,
         )
     except Exception as exc:  # pragma: no cover - defensive logging path
         logger.exception("Pipeline failed for job %s", context.job_id)

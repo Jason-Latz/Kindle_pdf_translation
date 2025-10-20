@@ -16,6 +16,7 @@ async def test_run_pipeline_persists_paragraphs(monkeypatch: pytest.MonkeyPatch,
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("STORAGE_BACKEND", "local")
     monkeypatch.setenv("DB_MODE", "manifests")
+    monkeypatch.setenv("TRANSLATOR_PROVIDER", "hf")
 
     job_id = "job123"
     source_pdf = tmp_path / "sample_paragraphs.pdf"
@@ -54,8 +55,16 @@ async def test_run_pipeline_persists_paragraphs(monkeypatch: pytest.MonkeyPatch,
     epub_path = Path("data/artifacts") / job_id / "book.epub"
     assert epub_path.exists()
 
+    translations_path = Path("data/artifacts") / job_id / "translated_paragraphs.json"
+    assert translations_path.exists()
+    translations_payload = json.loads(translations_path.read_text(encoding="utf-8"))
+    assert translations_payload["target_language"] == "es"
+    assert len(translations_payload["paragraphs"]) == len(payload["paragraphs"])
+    assert translations_payload["paragraphs"][0].startswith("[es]")
+
     manifest_payload = json.loads(manifest.read_text(encoding="utf-8"))
     assert manifest_payload["status"] == "done"
     assert manifest_payload["stage"] == "finalize"
     assert manifest_payload["epub_path"]
     assert manifest_payload.get("paragraphs_path")
+    assert manifest_payload.get("translations_path")
