@@ -14,7 +14,11 @@ async def test_hf_stub_provider_prefixes_translations() -> None:
 
 
 @pytest.mark.asyncio
-async def test_openai_provider_not_implemented_yet() -> None:
-    provider = OpenAIProvider(api_key="test")
-    with pytest.raises(NotImplementedError):
-        await provider.translate_batch(["hola"], src_lang="es", tgt_lang="en")
+async def test_openai_provider_requires_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TRANSLATOR_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "")
+
+    from app.providers.base import get_translation_provider
+
+    with pytest.raises(RuntimeError):
+        get_translation_provider()

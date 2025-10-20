@@ -3,7 +3,8 @@ from __future__ import annotations
 from app.config import get_settings
 
 
-def test_settings_default_values() -> None:
+def test_settings_default_values(monkeypatch) -> None:
+    monkeypatch.delenv("DB_MODE", raising=False)
     settings = get_settings()
     assert settings.translator_provider == "openai"
     assert settings.storage_backend == "local"
@@ -16,6 +17,7 @@ def test_settings_default_values() -> None:
 def test_settings_parses_comma_separated_lists(monkeypatch) -> None:
     monkeypatch.setenv("TARGET_LANGS", "es, fr ,  de")
     monkeypatch.setenv("CORS_ALLOW_ORIGINS", "https://a.test,https://b.test")
+    monkeypatch.delenv("DB_MODE", raising=False)
 
     settings = get_settings()
 

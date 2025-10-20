@@ -34,7 +34,11 @@ def test_configure_logging_creates_log_file(tmp_path, monkeypatch) -> None:
     log_path = Path("data/logs/job123.log")
 
     assert log_path.exists()
-    assert any(handler.baseFilename == str(log_path) for handler in logger.handlers if hasattr(handler, "baseFilename"))
+    expected_path = log_path.resolve()
+    assert any(
+        getattr(handler, "baseFilename", None) == str(expected_path)
+        for handler in logger.handlers
+    )
 
     logger.info("hello from test")
     with log_path.open("r", encoding="utf-8") as fh:
