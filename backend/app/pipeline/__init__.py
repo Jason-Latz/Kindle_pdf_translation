@@ -15,6 +15,7 @@ from ..models import Job
 from ..storage.local import LocalStorage
 from ..storage.s3_compat import S3Config, S3Storage
 from ..utils.logging import configure_logging
+from .build_epub import build_epub
 from .extract import extract_paragraphs
 from .translate import translate_paragraphs
 
@@ -130,6 +131,62 @@ def _resolve_source_pdf(
     return pdf_path, tmp_dir
 
 
+def _read_pdf_metadata(pdf_path: Path) -> dict[str, str]:
+    """Best-effort extraction of title/author metadata from the original PDF."""
+    try:
+        import fitz  # type: ignore[import-untyped]
+    except Exception:  # pragma: no cover - import failure depends on environment
+        return {}
+
+    try:
+        document = fitz.open(pdf_path)
+    except Exception:  # pragma: no cover - metadata is optional
+        return {}
+
+    try:
+        raw = document.metadata or {}
+    finally:
+        document.close()
+
+    metadata: dict[str, str] = {}
+
+    title = raw.get("title") or raw.get("Title")
+    if isinstance(title, str) and title.strip():
+        metadata["title"] = title.strip()
+
+    author = raw.get("author") or raw.get("Author")
+    if isinstance(author, str) and author.strip():
+        metadata["author"] = author.strip()
+
+    return metadata
+
+
+def _epub_metadata_for_context(context: PipelineContext, source_pdf: Path) -> dict[str, str]:
+    """Derive minimal EPUB metadata with sensible fallbacks."""
+    source_ref = Path(context.source_path)
+    base_title = source_ref.stem or source_ref.name
+    if not base_title or base_title == ".":
+        base_title = context.job_id
+
+    metadata: dict[str, str] = {
+        "title": base_title,
+        "chapter_title": base_title,
+        "language": context.target_lang,
+        "identifier": context.job_id,
+    }
+
+    pdf_meta = _read_pdf_metadata(source_pdf)
+    if title := pdf_meta.get("title"):
+        metadata["title"] = title
+        metadata["chapter_title"] = title
+
+    if author := pdf_meta.get("author"):
+        metadata["author"] = author
+
+    metadata.setdefault("author", "Unknown Author")
+    return metadata
+
+
 async def run_pipeline(context: PipelineContext) -> None:
     """Execute the extract → translate → build_epub → flashcards workflow."""
     settings = get_settings()
@@ -137,6 +194,7 @@ async def run_pipeline(context: PipelineContext) -> None:
     logger = configure_logging(context.job_id)
 
     paragraphs_location: str | None = None
+    artifact_location: str | None = None
     tmp_dir: Path | None = None
 
     try:
@@ -232,15 +290,39 @@ async def run_pipeline(context: PipelineContext) -> None:
             context.target_lang,
         )
 
+        await _update_job_state(
+            context.job_id,
+            status="processing",
+            stage="build_epub",
+            pct=85.0,
+        )
+
+        metadata = _epub_metadata_for_context(context, source_path)
         artifact_name = "book.epub"
+
         if isinstance(storage, LocalStorage):
             artifact_path = storage.artifact_path(context.job_id, artifact_name)
-            artifact_path.write_bytes(b"stub")
+            await build_epub(translations, artifact_path, metadata)
             artifact_location = str(artifact_path)
         else:  # S3Storage
             key = f"artifacts/{context.job_id}/{artifact_name}"
-            storage.put_artifact(key, BytesIO(b"stub"))
+            with tempfile.TemporaryDirectory(prefix=f"epub-{context.job_id}-") as tmp_output_dir:
+                tmp_epub_path = Path(tmp_output_dir) / artifact_name
+                await build_epub(translations, tmp_epub_path, metadata)
+                with tmp_epub_path.open("rb") as handle:
+                    storage.put_artifact(key, handle)
             artifact_location = key
+
+        await _update_job_state(
+            context.job_id,
+            status="processing",
+            stage="build_epub",
+            pct=95.0,
+        )
+        logger.info("Built EPUB artifact at %s", artifact_location)
+
+        if artifact_location is None:  # Defensive guard: should never happen.
+            raise RuntimeError("EPUB artifact location was not determined")
 
         final_extra: dict[str, object] | None = None
         if settings.db_mode == "manifests":
