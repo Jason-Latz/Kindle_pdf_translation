@@ -11,6 +11,6 @@ ebooklib
 wordfreq
 httpx
 python-dotenv
-openai>=1.40
+openai>=1.60.0
 watchfiles
 python-multipart
