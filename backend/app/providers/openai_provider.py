@@ -29,7 +29,7 @@ class OpenAIProvider(TranslationProvider):
         self,
         api_key: str,
         *,
-        model: str = "gpt-4o-mini",
+        model: str = "gpt-5-nano",
         max_input_tokens: int = DEFAULT_MAX_TOKENS,
         reserved_completion_tokens: int = RESERVED_COMPLETION_TOKENS,
         max_output_tokens: int = 2048,
@@ -58,20 +58,45 @@ class OpenAIProvider(TranslationProvider):
             reserved_tokens=self.reserved_completion_tokens,
         )
 
+        schema_payload = {
+            "name": "translations_response",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "translations": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    }
+                },
+                "required": ["translations"],
+                "additionalProperties": False,
+            },
+        }
+
         translations: list[str] = []
         for batch in batches:
-            response = await self._client.responses.create(
-                model=self.model,
-                input=[
+            request_kwargs = {
+                "model": self.model,
+                "input": [
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {
                         "role": "user",
                         "content": self._build_user_prompt(batch, src_lang, tgt_lang),
                     },
                 ],
-                temperature=0,
-                max_output_tokens=self.max_output_tokens,
-            )
+                "max_output_tokens": self.max_output_tokens,
+                "reasoning": {"effort": "low"},
+            }
+            try:
+                response = await self._client.responses.create(
+                    **request_kwargs,
+                    response_format={
+                        "type": "json_schema",
+                        "json_schema": schema_payload,
+                    },
+                )
+            except TypeError:
+                response = await self._client.responses.create(**request_kwargs)
             batch_translations = self._extract_translations(response)
             if len(batch_translations) != len(batch):
                 raise RuntimeError(
@@ -95,7 +120,7 @@ class OpenAIProvider(TranslationProvider):
         }
         return (
             "Translate the paragraphs listed in the JSON payload. "
-            "Return a JSON array of translated paragraphs in the same order.\n\n"
+            "Respond strictly with JSON matching the schema {\"translations\": [\"...\"]}.\n\n"
             f"{json.dumps(payload, ensure_ascii=False)}"
         )
 
@@ -121,30 +146,38 @@ class OpenAIProvider(TranslationProvider):
 
     @staticmethod
     def _collect_response_text(response: Any) -> str:
+        def _get(obj: Any, attr: str) -> Any:
+            if hasattr(obj, attr):
+                return getattr(obj, attr)
+            if isinstance(obj, dict):
+                return obj.get(attr)
+            return None
+
         # Fast path for the Responses API convenience attribute.
-        text = getattr(response, "output_text", None)
+        text = _get(response, "output_text")
         if isinstance(text, list):
             text = "".join(str(item) for item in text)
         if isinstance(text, str) and text.strip():
             return text
 
         # Fallback for structured content arrays.
-        output = getattr(response, "output", None)
+        output = _get(response, "output")
         fragments: list[str] = []
         if output:
             for block in output:
-                contents = getattr(block, "content", None)
+                contents = _get(block, "content")
                 if not contents:
                     continue
                 for item in contents:
-                    if getattr(item, "type", None) in {"output_text", "text"}:
-                        value = getattr(item, "text", None)
+                    item_type = _get(item, "type")
+                    if item_type in {"output_text", "text"}:
+                        value = _get(item, "text")
                         if isinstance(value, list):
                             fragments.extend(str(part) for part in value)
                         elif isinstance(value, str):
                             fragments.append(value)
-                    elif hasattr(item, "content"):
-                        value = getattr(item, "content")
+                    else:
+                        value = _get(item, "content")
                         if isinstance(value, list):
                             fragments.extend(str(part) for part in value)
                         elif isinstance(value, str):
@@ -153,15 +186,20 @@ class OpenAIProvider(TranslationProvider):
             return "".join(fragments)
 
         # Legacy chat/completions style.
-        choices = getattr(response, "choices", None)
+        choices = _get(response, "choices")
         if choices:
             fragments = []
             for choice in choices:
-                message = getattr(choice, "message", None)
-                if message and hasattr(message, "content"):
-                    fragments.append(str(message.content))
-                elif hasattr(choice, "text"):
-                    fragments.append(str(choice.text))
+                message = _get(choice, "message")
+                if message:
+                    content = _get(message, "content")
+                    if isinstance(content, list):
+                        fragments.extend(str(part) for part in content)
+                    elif isinstance(content, str):
+                        fragments.append(str(content))
+                text_value = _get(choice, "text")
+                if text_value:
+                    fragments.append(str(text_value))
             if fragments:
                 return "".join(fragments)
 
