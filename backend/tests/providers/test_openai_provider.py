@@ -19,7 +19,14 @@ class _DummyResponses:
         self.calls.append(kwargs)
         payload = self._outputs[self._index]
         self._index += 1
-        return SimpleNamespace(output_text=json.dumps(payload, ensure_ascii=False))
+        content = [
+            SimpleNamespace(
+                content=[
+                    SimpleNamespace(type="output_text", text=json.dumps({"translations": payload}, ensure_ascii=False))
+                ]
+            )
+        ]
+        return SimpleNamespace(output=content, output_text=None)
 
 
 class _DummyClient:
