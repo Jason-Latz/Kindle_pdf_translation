@@ -225,6 +225,7 @@ TARGET_LANGS=es,fr,de,it,pt
 
 ### Implement
 
+- Add spaCy tokenizer support (install `spacy>=3.7`; optionally download `python -m spacy download xx_sent_ud_sm` or language-specific models for better lemmatisation).
 - `pipeline/flashcards.py`:
   - Tokenize translated text (spaCy or simple split).
   - Rank words by frequency × rarity (`wordfreq.zipf_frequency`).

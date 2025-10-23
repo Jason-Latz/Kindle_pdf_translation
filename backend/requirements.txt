@@ -8,6 +8,7 @@ boto3
 pymupdf
 jinja2
 ebooklib
+spacy>=3.7
 wordfreq
 httpx
 python-dotenv

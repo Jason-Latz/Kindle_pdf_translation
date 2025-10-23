@@ -18,6 +18,7 @@ from ..utils.logging import configure_logging
 from .build_epub import build_epub
 from .extract import extract_paragraphs
 from .translate import translate_paragraphs
+from .flashcards import generate_flashcards
 
 
 @dataclass(slots=True)
@@ -195,6 +196,7 @@ async def run_pipeline(context: PipelineContext) -> None:
 
     paragraphs_location: str | None = None
     artifact_location: str | None = None
+    cards_location: str | None = None
     tmp_dir: Path | None = None
 
     try:
@@ -324,6 +326,43 @@ async def run_pipeline(context: PipelineContext) -> None:
         if artifact_location is None:  # Defensive guard: should never happen.
             raise RuntimeError("EPUB artifact location was not determined")
 
+        await _update_job_state(
+            context.job_id,
+            status="processing",
+            stage="flashcards",
+            pct=96.0,
+        )
+
+        flashcards_name = "flashcards.csv"
+        if isinstance(storage, LocalStorage):
+            flashcards_path = storage.artifact_path(context.job_id, flashcards_name)
+            await generate_flashcards(
+                translations,
+                flashcards_path,
+                language_code=context.target_lang,
+            )
+            cards_location = str(flashcards_path)
+        else:
+            key = f"artifacts/{context.job_id}/{flashcards_name}"
+            with tempfile.TemporaryDirectory(prefix=f"cards-{context.job_id}-") as tmp_dir_path:
+                tmp_csv_path = Path(tmp_dir_path) / flashcards_name
+                await generate_flashcards(
+                    translations,
+                    tmp_csv_path,
+                    language_code=context.target_lang,
+                )
+                with tmp_csv_path.open("rb") as handle:
+                    storage.put_artifact(key, handle)
+            cards_location = key
+
+        await _update_job_state(
+            context.job_id,
+            status="processing",
+            stage="flashcards",
+            pct=98.0,
+        )
+        logger.info("Generated flashcards artifact at %s", cards_location)
+
         final_extra: dict[str, object] | None = None
         if settings.db_mode == "manifests":
             final_extra = dict(extra_payload)
@@ -331,6 +370,8 @@ async def run_pipeline(context: PipelineContext) -> None:
                 final_extra["paragraphs_path"] = paragraphs_location
             if translations_location and "translations_path" not in final_extra:
                 final_extra["translations_path"] = translations_location
+            if cards_location and "flashcards_path" not in final_extra:
+                final_extra["flashcards_path"] = cards_location
 
         await _update_job_state(
             context.job_id,
@@ -339,6 +380,7 @@ async def run_pipeline(context: PipelineContext) -> None:
             pct=100.0,
             error=None,
             epub_path=artifact_location,
+            cards_path=cards_location,
             extra=final_extra if final_extra else None,
         )
     except Exception as exc:  # pragma: no cover - defensive logging path
