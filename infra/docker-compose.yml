@@ -13,6 +13,16 @@ services:
     depends_on:
       - minio
 
+  frontend:
+    build:
+      context: ../frontend
+    depends_on:
+      - backend
+    environment:
+      NEXT_PUBLIC_API_BASE: http://backend:8000
+    ports:
+      - "3000:3000"
+
   minio:
     image: minio/minio:latest
     command: server /data --console-address ":9001"
