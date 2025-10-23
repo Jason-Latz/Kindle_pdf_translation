@@ -9,6 +9,7 @@ from typing import Iterable, Sequence
 
 from wordfreq import zipf_frequency
 
+from ..providers import get_translation_provider
 from ..utils import get_tokenizer
 
 MAX_FLASHCARDS = 30
@@ -47,6 +48,7 @@ async def generate_flashcards(
     output_path: Path,
     *,
     language_code: str,
+    translation_lang: str = "en",
 ) -> Path:
     """Create a vocabulary CSV for the translated content."""
     frequencies = _count_token_frequencies(paragraphs, language_code)
@@ -58,10 +60,7 @@ async def generate_flashcards(
             handle,
             fieldnames=[
                 "word",
-                "count",
-                "zipf_frequency",
-                "rarity_weight",
-                "score",
+                "translation",
             ],
         )
         writer.writeheader()
@@ -78,15 +77,28 @@ async def generate_flashcards(
 
         scored_rows.sort(key=lambda item: (item[4], item[1]), reverse=True)
         top_rows = scored_rows[:MAX_FLASHCARDS]
+        if not top_rows:
+            return output_path
 
-        for word, count, zipf, rarity_weight, score in top_rows:
+        candidate_words = [word for word, *_ in top_rows]
+        provider = get_translation_provider()
+        translated_words = await provider.translate_batch(
+            candidate_words,
+            src_lang=language_code,
+            tgt_lang=translation_lang,
+        )
+
+        if len(translated_words) != len(candidate_words):
+            raise RuntimeError(
+                "Translation provider returned a mismatched number of flashcard translations "
+                f"(expected {len(candidate_words)}, received {len(translated_words)})"
+            )
+
+        for word, translation in zip(candidate_words, translated_words):
             writer.writerow(
                 {
                     "word": word,
-                    "count": count,
-                    "zipf_frequency": f"{zipf:.3f}",
-                    "rarity_weight": f"{rarity_weight:.3f}",
-                    "score": f"{score:.3f}",
+                    "translation": translation,
                 }
             )
 
