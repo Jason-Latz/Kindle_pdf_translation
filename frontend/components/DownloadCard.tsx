@@ -33,12 +33,12 @@ export function DownloadCard({ status }: DownloadCardProps) {
       <div className="grid gap-3 sm:grid-cols-2">
         <DownloadButton
           label="Download EPUB"
-          href={jobId ? `/api/jobs/${jobId}/download?type=epub` : '#'}
+          href={jobId ? `/api/jobs/${jobId}/download?file_type=epub` : '#'}
           ready={isReady}
         />
         <DownloadButton
           label="Download Flashcards"
-          href={jobId ? `/api/jobs/${jobId}/download?type=flashcards` : '#'}
+          href={jobId ? `/api/jobs/${jobId}/download?file_type=flashcards` : '#'}
           ready={isReady}
         />
       </div>
