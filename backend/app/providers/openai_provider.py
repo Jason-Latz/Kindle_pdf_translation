@@ -85,7 +85,7 @@ class OpenAIProvider(TranslationProvider):
                     },
                 ],
                 "max_output_tokens": self.max_output_tokens,
-                "reasoning": {"effort": "low"},
+                "reasoning": {"effort": "minimal"},
             }
             try:
                 response = await self._client.responses.create(
