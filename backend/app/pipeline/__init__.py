@@ -162,12 +162,18 @@ def _read_pdf_metadata(pdf_path: Path) -> dict[str, str]:
     return metadata
 
 
+def _artifact_base_name(context: PipelineContext) -> str:
+    """Return the base name (sans extension) to use for artifacts."""
+    source_ref = Path(context.source_path)
+    base_name = source_ref.stem or source_ref.name
+    if not base_name or base_name == ".":
+        base_name = context.job_id
+    return base_name
+
+
 def _epub_metadata_for_context(context: PipelineContext, source_pdf: Path) -> dict[str, str]:
     """Derive minimal EPUB metadata with sensible fallbacks."""
-    source_ref = Path(context.source_path)
-    base_title = source_ref.stem or source_ref.name
-    if not base_title or base_title == ".":
-        base_title = context.job_id
+    base_title = _artifact_base_name(context)
 
     metadata: dict[str, str] = {
         "title": base_title,
@@ -300,7 +306,8 @@ async def run_pipeline(context: PipelineContext) -> None:
         )
 
         metadata = _epub_metadata_for_context(context, source_path)
-        artifact_name = "book.epub"
+        artifact_base = _artifact_base_name(context)
+        artifact_name = f"{artifact_base}.epub"
 
         if isinstance(storage, LocalStorage):
             artifact_path = storage.artifact_path(context.job_id, artifact_name)
@@ -333,7 +340,7 @@ async def run_pipeline(context: PipelineContext) -> None:
             pct=96.0,
         )
 
-        flashcards_name = "flashcards.csv"
+        flashcards_name = f"{artifact_base}.csv"
         if isinstance(storage, LocalStorage):
             flashcards_path = storage.artifact_path(context.job_id, flashcards_name)
             await generate_flashcards(

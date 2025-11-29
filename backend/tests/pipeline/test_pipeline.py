@@ -19,6 +19,7 @@ async def test_run_pipeline_persists_paragraphs(monkeypatch: pytest.MonkeyPatch,
     monkeypatch.setenv("TRANSLATOR_PROVIDER", "hf")
 
     job_id = "job123"
+    uploaded_name = "sample_paragraphs.pdf"
     source_pdf = tmp_path / "sample_paragraphs.pdf"
     source_pdf.write_bytes(SAMPLE_PDF.read_bytes())
 
@@ -30,7 +31,7 @@ async def test_run_pipeline_persists_paragraphs(monkeypatch: pytest.MonkeyPatch,
         json.dumps(
             {
                 "id": job_id,
-                "filename": "source.pdf",
+                "filename": uploaded_name,
                 "tgt_lang": "es",
                 "status": "queued",
                 "pct": 0.0,
@@ -52,7 +53,8 @@ async def test_run_pipeline_persists_paragraphs(monkeypatch: pytest.MonkeyPatch,
     assert payload["paragraphs"][0].startswith("Lorem ipsum")
     assert payload["paragraphs"][-1].startswith("Proin leo ipsum")
 
-    epub_path = Path("data/artifacts") / job_id / "book.epub"
+    artifact_base = Path(uploaded_name).stem
+    epub_path = Path("data/artifacts") / job_id / f"{artifact_base}.epub"
     assert epub_path.exists()
 
     translations_path = Path("data/artifacts") / job_id / "translated_paragraphs.json"

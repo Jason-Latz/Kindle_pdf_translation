@@ -61,6 +61,15 @@ def _normalize_lang(value: str) -> str:
     return value.lower().strip().strip("[]").strip('"').strip("'")
 
 
+def _artifact_filename(original_name: str | None, extension: str, fallback: str) -> str:
+    """Return a user-facing artifact name derived from the uploaded PDF."""
+    if original_name:
+        stem = Path(original_name).stem
+        if stem and stem != ".":
+            return f"{stem}{extension}"
+    return fallback
+
+
 @router.post("/jobs", status_code=202)
 async def create_job(
     background_tasks: BackgroundTasks,
@@ -172,11 +181,11 @@ async def download_artifact(job_id: str, file_type: str = "epub") -> StreamingRe
 
             if file_type == "epub":
                 artifact_ref = job.epub_path
-                filename = "book.epub"
+                filename = _artifact_filename(job.filename, ".epub", "book.epub")
                 media_type = "application/epub+zip"
             else:
                 artifact_ref = job.cards_path
-                filename = "flashcards.csv"
+                filename = _artifact_filename(job.filename, ".csv", "flashcards.csv")
                 media_type = "text/csv"
 
             if not artifact_ref:
@@ -193,11 +202,11 @@ async def download_artifact(job_id: str, file_type: str = "epub") -> StreamingRe
 
         if file_type == "epub":
             artifact_ref = payload.get("epub_path")
-            filename = "book.epub"
+            filename = _artifact_filename(payload.get("filename"), ".epub", "book.epub")
             media_type = "application/epub+zip"
         else:
             artifact_ref = payload.get("cards_path")
-            filename = "flashcards.csv"
+            filename = _artifact_filename(payload.get("filename"), ".csv", "flashcards.csv")
             media_type = "text/csv"
 
         if not artifact_ref:
