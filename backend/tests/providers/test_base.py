@@ -46,11 +46,34 @@ def test_chunk_by_tokens_handles_oversized_paragraph() -> None:
     assert batches == [[large]]
 
 
+def test_chunk_by_tokens_respects_completion_budget() -> None:
+    texts = ["a" * 40, "b" * 40, "c" * 40, "d" * 40]
+    batches = chunk_by_tokens(
+        texts,
+        max_tokens=1000,
+        reserved_tokens=0,
+        max_completion_tokens=30,
+        completion_ratio=1.0,
+    )
+    assert batches == [["a" * 40, "b" * 40, "c" * 40], ["d" * 40]]
+
+
 def test_chunk_by_tokens_validates_inputs() -> None:
     with pytest.raises(ValueError):
         chunk_by_tokens(["a"], max_tokens=0)
     with pytest.raises(ValueError):
         chunk_by_tokens(["a"], max_tokens=10, reserved_tokens=11)
+    with pytest.raises(ValueError):
+        chunk_by_tokens(["a"], max_tokens=10, max_completion_tokens=0)
+    with pytest.raises(ValueError):
+        chunk_by_tokens(
+            ["a"],
+            max_tokens=10,
+            max_completion_tokens=20,
+            reserved_completion_tokens=25,
+        )
+    with pytest.raises(ValueError):
+        chunk_by_tokens(["a"], max_tokens=10, completion_ratio=0)
 
 
 def test_get_translation_provider_requires_openai_key(monkeypatch: pytest.MonkeyPatch) -> None:

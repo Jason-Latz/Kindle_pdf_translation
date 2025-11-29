@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterable, Sequence
 from typing import Any
+from pydantic import BaseModel
 
 from openai import AsyncOpenAI
 
@@ -32,7 +33,7 @@ class OpenAIProvider(TranslationProvider):
         model: str = "gpt-5-nano",
         max_input_tokens: int = DEFAULT_MAX_TOKENS,
         reserved_completion_tokens: int = RESERVED_COMPLETION_TOKENS,
-        max_output_tokens: int = 2048,
+        max_output_tokens: int = 99048,
     ) -> None:
         self.model = model
         self.max_input_tokens = max_input_tokens
@@ -56,10 +57,12 @@ class OpenAIProvider(TranslationProvider):
             paragraphs,
             max_tokens=self.max_input_tokens,
             reserved_tokens=self.reserved_completion_tokens,
+            max_completion_tokens=self.max_output_tokens,
         )
 
         schema_payload = {
             "name": "translations_response",
+            "strict": True,
             "schema": {
                 "type": "object",
                 "properties": {
@@ -72,6 +75,8 @@ class OpenAIProvider(TranslationProvider):
                 "additionalProperties": False,
             },
         }
+        class TranslationResult(BaseModel):
+            translations: list[str]
 
         translations: list[str] = []
         for batch in batches:
@@ -83,26 +88,30 @@ class OpenAIProvider(TranslationProvider):
                         "role": "user",
                         "content": self._build_user_prompt(batch, src_lang, tgt_lang),
                     },
+                    
                 ],
                 "max_output_tokens": self.max_output_tokens,
                 "reasoning": {"effort": "minimal"},
+                "text_format": TranslationResult
+               
             }
-            try:
-                response = await self._client.responses.create(
-                    **request_kwargs,
-                    response_format={
-                        "type": "json_schema",
-                        "json_schema": schema_payload,
-                    },
-                )
-            except TypeError:
-                response = await self._client.responses.create(**request_kwargs)
+            # try:
+            response = await self._client.responses.parse(
+                **request_kwargs,
+                # response_format={
+                #     "type": "json_schema",
+                #     "json_schema": schema_payload,
+                # },
+                
+            )
+            # except TypeError:
+            #     response = await self._client.responses.create(**request_kwargs)
             batch_translations = self._extract_translations(response)
-            if len(batch_translations) != len(batch):
-                raise RuntimeError(
-                    "OpenAI returned a mismatched number of translations "
-                    f"(expected {len(batch)}, received {len(batch_translations)})"
-                )
+            # if len(batch_translations) != len(batch):
+            #     raise RuntimeError(
+            #         "OpenAI returned a mismatched number of translations "
+            #         f"(expected {len(batch)}, received {len(batch_translations)})"
+            #     )
             translations.extend(batch_translations)
 
         return translations
@@ -146,6 +155,15 @@ class OpenAIProvider(TranslationProvider):
 
     @staticmethod
     def _collect_response_text(response: Any) -> str:
+        # import logging
+        # logger = logging.getLogger(__name__)
+        # logger.debug("OpenAI raw response: %r", response)
+
+        print("\n=== OpenAI raw response ===")
+        print(response)
+        print("=== end response ===\n")
+        # print(f"\n\n\n\n\n {response} \n\n\n\n\n")
+        
         def _get(obj: Any, attr: str) -> Any:
             if hasattr(obj, attr):
                 return getattr(obj, attr)

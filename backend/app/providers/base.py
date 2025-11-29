@@ -63,6 +63,9 @@ def chunk_by_tokens(
     *,
     max_tokens: int = DEFAULT_MAX_TOKENS,
     reserved_tokens: int = RESERVED_COMPLETION_TOKENS,
+    max_completion_tokens: int | None = None,
+    reserved_completion_tokens: int = 0,
+    completion_ratio: float = 1.0,
 ) -> list[list[str]]:
     """
     Split texts into batches that respect a token budget.
@@ -73,33 +76,68 @@ def chunk_by_tokens(
         raise ValueError("max_tokens must be positive")
     if reserved_tokens < 0:
         raise ValueError("reserved_tokens cannot be negative")
+    if completion_ratio <= 0:
+        raise ValueError("completion_ratio must be positive")
 
     budget = max_tokens - reserved_tokens
     if budget <= 0:
         raise ValueError("reserved_tokens leaves no room for prompts")
 
+    completion_budget: int | None = None
+    if max_completion_tokens is not None:
+        if max_completion_tokens <= 0:
+            raise ValueError("max_completion_tokens must be positive")
+        if reserved_completion_tokens < 0:
+            raise ValueError("reserved_completion_tokens cannot be negative")
+        completion_budget = max_completion_tokens - reserved_completion_tokens
+        if completion_budget <= 0:
+            raise ValueError("reserved_completion_tokens leaves no room for completions")
+
     batches: list[list[str]] = []
     current: list[str] = []
     current_tokens = 0
+    current_completion_tokens = 0
 
     for text in texts:
         tokens = estimate_token_count(text)
+        completion_tokens = (
+            max(1, int(round(tokens * completion_ratio))) if completion_budget is not None else 0
+        )
+
         if tokens > budget:
             # Single paragraph exceeds the prompt budget; force its own batch
             if current:
                 batches.append(current)
                 current = []
                 current_tokens = 0
+                current_completion_tokens = 0
+            batches.append([text])
+            continue
+        if completion_budget is not None and completion_tokens > completion_budget:
+            if current:
+                batches.append(current)
+                current = []
+                current_tokens = 0
+                current_completion_tokens = 0
             batches.append([text])
             continue
 
-        if current_tokens + tokens > budget and current:
+        if current and (
+            current_tokens + tokens > budget
+            or (
+                completion_budget is not None
+                and current_completion_tokens + completion_tokens > completion_budget
+            )
+        ):
             batches.append(current)
             current = []
             current_tokens = 0
+            current_completion_tokens = 0
 
         current.append(text)
         current_tokens += tokens
+        if completion_budget is not None:
+            current_completion_tokens += completion_tokens
 
     if current:
         batches.append(current)
