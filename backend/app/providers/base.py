@@ -37,9 +37,16 @@ def get_translation_provider(settings: Settings | None = None) -> TranslationPro
         return OpenAIProvider(api_key=cfg.openai_api_key)
 
     if cfg.translator_provider == "hf":
-        from .hf_stub_provider import HFStubProvider  # avoid circular import
+        if not cfg.hf_model_id:
+            raise RuntimeError("HF_MODEL_ID is required for the Hugging Face provider")
 
-        return HFStubProvider()
+        from .hf_inference_provider import HFInferenceProvider  # avoid circular import
+
+        return HFInferenceProvider(
+            model_id=cfg.hf_model_id,
+            api_token=cfg.hf_api_token,
+            base_url=str(cfg.hf_base_url) if cfg.hf_base_url else None,
+        )
 
     raise RuntimeError(f"Unsupported translator provider '{cfg.translator_provider}'")
 

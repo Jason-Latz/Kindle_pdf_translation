@@ -16,6 +16,9 @@ class Settings(BaseSettings):
         default="openai", alias="TRANSLATOR_PROVIDER"
     )
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
+    hf_model_id: str | None = Field(default=None, alias="HF_MODEL_ID")
+    hf_api_token: str | None = Field(default=None, alias="HF_API_TOKEN")
+    hf_base_url: AnyHttpUrl | None = Field(default=None, alias="HF_BASE_URL")
 
     storage_backend: Literal["local", "s3"] = Field(
         default="local", alias="STORAGE_BACKEND"
