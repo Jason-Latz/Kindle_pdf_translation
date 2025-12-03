@@ -9,8 +9,8 @@ COPY frontend ./
 # Allow overriding API base at build time (Render sets env at build)
 ARG NEXT_PUBLIC_API_BASE=http://localhost:8000
 ENV NEXT_PUBLIC_API_BASE=${NEXT_PUBLIC_API_BASE}
-# Build (output: export is configured in next.config.js); build writes the static site to ./out.
-RUN npm run build \
+# Build with static export (Next.js app dir with `output: "export"`). The build writes to ./out.
+RUN npm run build -- --output export \
     && mv ./out /app/out
 
 # 2) Build the backend

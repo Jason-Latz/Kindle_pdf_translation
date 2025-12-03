@@ -83,7 +83,7 @@ Goal: run both the FastAPI backend and the exported Next.js frontend in one cont
 6) Render will auto-detect and build using the root `Dockerfile`. Build command is not needed; the Dockerfile handles the multi-stage build. Render provides a `PORT` env var automatically; the container listens on that port (defaults to 8000 if not set).
 
 ## How the Dockerfile works (summary)
-- Stage `frontend`: installs Node deps, builds Next.js, runs `next export` to produce static files.
+- Stage `frontend`: installs Node deps, runs `next build` with `output: "export"` (configured in `next.config.js`), producing static files in `out/`.
 - Stage `backend`: installs Python deps, copies backend source, copies static files into `/app/frontend_static`, creates `/app/data`, then starts `uvicorn app.main:app` on port 8000.
 - Render exposes the container port automatically; your service URL will look like `https://<service>.onrender.com`.
 

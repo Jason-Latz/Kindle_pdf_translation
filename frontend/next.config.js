@@ -12,14 +12,6 @@ const nextConfig = {
   },
   env: {
     NEXT_PUBLIC_API_BASE: API_BASE
-  },
-  async rewrites() {
-    return [
-      {
-        source: "/api/:path*",
-        destination: `${API_BASE}/api/:path*`
-      }
-    ];
   }
 };
 
