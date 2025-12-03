@@ -6,6 +6,10 @@ const nextConfig = {
   experimental: {
     typedRoutes: true
   },
+  output: "export",
+  images: {
+    unoptimized: true
+  },
   env: {
     NEXT_PUBLIC_API_BASE: API_BASE
   },

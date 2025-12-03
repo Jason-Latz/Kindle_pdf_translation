@@ -10,3 +10,4 @@ __pycache__/
 .venv/
 *.pyc
 *.log
+vllm-env/

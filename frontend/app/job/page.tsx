@@ -2,17 +2,16 @@
 
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
-import { useParams, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 
-import { DownloadCard } from '../../../components/DownloadCard'
-import { JobStatus, ProgressFeed } from '../../../components/ProgressFeed'
+import { DownloadCard } from '../../components/DownloadCard'
+import { JobStatus, ProgressFeed } from '../../components/ProgressFeed'
 
 const POLL_INTERVAL_MS = 2000
 
 export default function JobStatusPage() {
-  const params = useParams<{ id: string }>()
   const searchParams = useSearchParams()
-  const jobId = useMemo(() => params?.id ?? searchParams?.get('id') ?? '', [params?.id, searchParams])
+  const jobId = useMemo(() => searchParams?.get('id') ?? '', [searchParams])
 
   const [status, setStatus] = useState<JobStatus | null>(null)
   const [error, setError] = useState<string | null>(null)
