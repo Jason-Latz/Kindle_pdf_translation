@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from .config import get_settings
 from .routes import router as api_router
@@ -32,6 +35,16 @@ def create_app() -> FastAPI:
     def healthcheck() -> dict[str, str]:
         """Simple readiness endpoint for local and container health checks."""
         return {"status": "ok"}
+
+    # Serve the exported Next.js frontend when present. The Dockerfile copies
+    # the static build into /app/frontend_static.
+    static_dir = Path(__file__).resolve().parent.parent / "frontend_static"
+    if static_dir.exists():
+        app.mount(
+            "/",
+            StaticFiles(directory=static_dir, html=True),
+            name="frontend",
+        )
 
     return app
 

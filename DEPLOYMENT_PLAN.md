@@ -1,134 +1,62 @@
-# Deployment Plan (Beginner-Friendly) — Lean Path + POC Shortcut
+# Render Deployment Plan (Beginner-Friendly, Single Dockerfile)
 
-This explains the simplest ways to get your app running on AWS, assuming you have little AWS experience. It covers how to get the prerequisites, then two deployment modes:
-- **Lean (more polished):** Backend on ECS Fargate behind an ALB with HTTPS and a custom domain; static frontend on S3 (optionally via CloudFront) with a custom domain; artifacts in S3; manifest mode (no DB/EFS).
-- **POC (fastest to see it work):** No custom domain, no TLS, use the default VPC, give the backend task a public IP, static frontend on S3, and call the backend over plain HTTP using the task IP (or an HTTP-only ALB DNS).
+Goal: run both the FastAPI backend and the exported Next.js frontend in one container on Render. Render builds from a single `Dockerfile` in the repo root (added). The frontend is statically exported and served by FastAPI; artifacts and uploads can live on a Render persistent disk.
 
-The code already supports: FastAPI backend on port 8000, static Next.js export with configurable `NEXT_PUBLIC_API_BASE`, S3 artifacts, manifest mode (`DB_MODE=manifests`).
+## What’s in this repo now
+- Root `Dockerfile`: multi-stage build. Stage 1 builds the Next.js static site; Stage 2 builds the FastAPI backend and copies the static site to `/app/frontend_static`. `uvicorn` serves both API and static.
+- `backend/app/main.py`: now mounts static files if `/app/frontend_static` exists.
+- Default ports: backend listens on 8000; frontend is served at `/` by the same process.
 
----
+## Prerequisites (step by step)
+1) Create a Render account at https://render.com (free tier is enough to test).
+2) Install Docker locally (Docker Desktop) so you can test the build if desired.
+3) Clone your repo and ensure the `Dockerfile` is in the repo root (done).
+4) Decide on storage:
+   - Easiest: use a Render Persistent Disk mounted at `/app/data` and set `STORAGE_BACKEND=local`.
+   - Optional: use S3 if you already have it; set `STORAGE_BACKEND=s3` and supply S3 credentials.
 
-## 0) Get the Prerequisites (step by step)
+## Environment variables to set in Render
+- `TRANSLATOR_PROVIDER` (e.g., `openai`)
+- `OPENAI_API_KEY` (if using OpenAI)
+- `STORAGE_BACKEND` = `local` (simplest) or `s3`
+- `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_ENDPOINT` (only if using s3 backend)
+- `DB_MODE=manifests`
+- `MAX_PDF_MB`, `MAX_PAGES`, `TARGET_LANGS`
+- `CORS_ALLOW_ORIGINS=*` (since frontend is same origin)
+- Optional: `NEXT_PUBLIC_API_BASE` build arg (Render passes env at build time). You can set it to `https://<your-render-subdomain>.onrender.com` or just leave it blank because the frontend fetches `/api/...` relative to the same host. If you want to be explicit, add it as an env var in Render; it will be used during `npm run build`.
 
-1) **Create and secure your AWS account**
-   - Sign up at https://aws.amazon.com.
-   - Turn on MFA for the root user.
-   - In IAM, create an admin user (don’t use root daily). Create access keys for that user and store them in a password manager.
+## Create the Render service (Web Service using Dockerfile)
+1) In Render, click “New” → “Web Service”.
+2) Connect the Git repo for this project.
+3) When prompted:
+   - Environment: Docker.
+   - Region: pick closest.
+   - Branch: main (or your branch).
+   - Instance type: start with the smallest that fits (512 MB–1 GB RAM; bump if out of memory).
+   - Auto deploy: your choice.
+4) Add a Persistent Disk (recommended for `STORAGE_BACKEND=local`):
+   - Name: `data`
+   - Mount path: `/app/data`
+   - Size: choose based on expected file size (e.g., 5–10 GB to start).
+5) Add the environment variables above in the “Environment” section.
+6) Render will auto-detect and build using the root `Dockerfile`. Build command is not needed; the Dockerfile handles the multi-stage build. Render provides a `PORT` env var automatically; the container listens on that port (defaults to 8000 if not set).
 
-2) **Install and configure the AWS CLI**
-   - macOS: `brew install awscli` (or use the AWS installer). Windows: AWS CLI MSI installer.
-   - Configure: `aws configure`
-     - Enter Access Key ID and Secret from your IAM user.
-     - Choose a default region, e.g., `us-east-1`.
-     - Output format: `json`.
-   - Verify: `aws sts get-caller-identity` (should return your account and user ARN).
+## How the Dockerfile works (summary)
+- Stage `frontend`: installs Node deps, builds Next.js, runs `next export` to produce static files.
+- Stage `backend`: installs Python deps, copies backend source, copies static files into `/app/frontend_static`, creates `/app/data`, then starts `uvicorn app.main:app` on port 8000.
+- Render exposes the container port automatically; your service URL will look like `https://<service>.onrender.com`.
 
-3) **Create the S3 buckets**
-   - In the AWS console → S3:
-     - Create bucket `book-translator-artifacts` (block all public access). This holds uploads and generated EPUB/flashcards.
-     - Create bucket `book-translator-web` for the static site. Enable static website hosting on this bucket. For the lean path, you can later put CloudFront in front; for POC you can use the website URL directly (HTTP).
+## Test after deploy
+1) Wait for the first deploy to finish (Render dashboard shows logs).
+2) Visit your Render URL (e.g., `https://<service>.onrender.com`) — you should see the UI.
+3) Upload a small PDF; watch progress; confirm artifacts exist on disk:
+   - If using local storage, files live in `/app/data` (on the Render disk).
+   - If using S3, check your bucket for uploads and outputs.
+4) Health check: `https://<service>.onrender.com/healthz` should return `{"status": "ok"}`.
 
-4) **Set up IAM roles/policies for ECS**
-   - Task execution role: use AWS-managed policy `AmazonECSTaskExecutionRolePolicy`.
-   - Task role (backend): custom inline policy allowing `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject`, `s3:ListBucket` on `arn:aws:s3:::book-translator-artifacts/*` and `arn:aws:s3:::book-translator-artifacts`.
-
-5) **Decide your network approach**
-   - **POC (easier):** Use the default VPC and its subnets. When creating the ECS service, enable “Assign public IP” so the task gets a public IP. Security group: allow inbound TCP 8000 from 0.0.0.0/0. Skip load balancer; call the task IP directly.
-   - **Lean (more robust):** Use (or create) a VPC with 2 public + 2 private subnets and a NAT gateway. Backend tasks live in private subnets; an ALB in public subnets terminates HTTPS and forwards to port 8000.
-
-6) **(Lean only) Get certificates and DNS**
-   - ACM: request a public cert for `api.yourdomain.com` in the same region as your ALB. If using CloudFront for the frontend, request `app.yourdomain.com` in `us-east-1`.
-   - Validate via DNS: ACM shows CNAMEs; add them in your DNS (Route 53 hosted zone or your registrar).
-   - DNS: in Route 53, create `A/AAAA` aliases pointing `api.yourdomain.com` → ALB; `app.yourdomain.com` → CloudFront (or S3 website if you skip CloudFront).
-
-7) **Install Docker locally (to build images)**
-   - Install Docker Desktop or the Docker Engine for your OS.
-
----
-
-## 1) Frontend (Static Export to S3)
-
-1) Build and export with the correct API base:
-   - Lean: `cd frontend && npm ci && NEXT_PUBLIC_API_BASE=https://api.yourdomain.com npm run build && npx next export -o out`
-   - POC: `cd frontend && npm ci && NEXT_PUBLIC_API_BASE=http://<task-ip>:8000 npm run build && npx next export -o out` (replace `<task-ip>` after the backend is running; or use the ALB DNS if you add an HTTP-only ALB).
-
-2) Upload to the website bucket:
-   - `aws s3 sync out/ s3://book-translator-web/`
-   - POC: use the S3 “Static website hosting” URL shown in the console (HTTP).
-   - Lean: front it with CloudFront for HTTPS and your `app.yourdomain.com` hostname.
-
----
-
-## 2) Backend (ECR → ECS Fargate)
-
-1) Push image to ECR:
-   - Create ECR repo `book-translator-backend`.
-   - `aws ecr get-login-password --region <region> | docker login --username AWS --password-stdin <acct>.dkr.ecr.<region>.amazonaws.com`
-   - `docker build -t <acct>.dkr.ecr.<region>.amazonaws.com/book-translator-backend:latest ./backend`
-   - `docker push <acct>.dkr.ecr.<region>.amazonaws.com/book-translator-backend:latest`
-
-2) Create the ECS task definition (Fargate):
-   - Container port: 8000.
-   - CPU/mem: start with 0.5 vCPU / 1–2 GB.
-   - Env vars:
-     - `STORAGE_BACKEND=s3`
-     - `S3_BUCKET=book-translator-artifacts`
-     - `S3_ENDPOINT=https://s3.amazonaws.com` (or leave blank)
-     - `TRANSLATOR_PROVIDER`
-     - `OPENAI_API_KEY`
-     - `MAX_PDF_MB`, `MAX_PAGES`, `TARGET_LANGS`
-     - `DB_MODE=manifests`
-     - `CORS_ALLOW_ORIGINS`:
-       - Lean: `https://app.yourdomain.com`
-       - POC: `*` (for quick testing)
-   - IAM: attach the task role with S3 access; execution role for pulls/logs.
-   - Logging: CloudWatch Logs group, e.g., `/ecs/book-translator-backend`.
-
-3) Create the ECS service:
-   - **POC mode:**
-     - Launch type: Fargate.
-     - Network: default VPC and subnets.
-     - Assign public IP: Enabled.
-     - Security group: inbound TCP 8000 from 0.0.0.0/0.
-     - Desired count: 1 task.
-     - No load balancer. After it starts, go to ECS → Tasks, copy the public IP, and test `http://<task-ip>:8000/healthz`.
-   - **Lean mode:**
-     - Launch type: Fargate.
-     - Network: VPC with private subnets; do NOT assign public IP.
-     - Security group: allow inbound 8000 from ALB SG.
-     - Attach to ALB target group on port 8000. Health check: `/healthz`.
-     - ALB in public subnets with HTTPS listener (443) using ACM cert for `api.yourdomain.com`.
-     - Desired count: 1–2 tasks.
-
----
-
-## 3) Storage (S3)
-
-- Artifacts bucket: `book-translator-artifacts` (block public access). Backend reads/writes with IAM only.
-- Website bucket: `book-translator-web` (public via static website hosting for POC, or private + CloudFront OAI for Lean).
-- IAM: task role must have `s3:PutObject`, `s3:GetObject`, `s3:DeleteObject`, `s3:ListBucket` on the artifacts bucket.
-
----
-
-## 4) DNS/TLS (Lean only; skip for POC)
-
-- ACM: validated certs for `api.yourdomain.com` (ALB region) and `app.yourdomain.com` (if CloudFront, request in `us-east-1`).
-- ALB: HTTPS listener 443 with the API cert; forward to backend target group on 8000.
-- CloudFront (optional for frontend): origin = S3 website endpoint; attach `app.yourdomain.com` cert (in `us-east-1`).
-- Route 53: `A/AAAA` alias `api.yourdomain.com` → ALB; `app.yourdomain.com` → CloudFront (or S3 website if you skip CloudFront).
-
----
-
-## 5) Validation
-
-- POC: `http://<task-ip>:8000/healthz` → 200. Open the S3 website URL for the frontend, upload a small PDF, see progress, confirm artifacts appear in the `book-translator-artifacts` bucket.
-- Lean: `https://api.yourdomain.com/healthz` → 200. Visit `https://app.yourdomain.com`, upload a PDF, confirm artifacts in S3, and check job polling works.
-- Logs: CloudWatch Logs (`/ecs/book-translator-backend`). ALB target health (Lean).
-
----
-
-## 6) Operations
-
-- Deploy new backend image tags, then update the ECS service (use `force-new-deployment`).
-- Manifest mode means in-flight jobs are lost if the task restarts. For durability later, move to RDS or reintroduce EFS + SQLite.
-- Optional: autoscaling on CPU or ALB 5xx (Lean).
+## Notes and options
+- If the build fails due to memory, increase the instance size or add a swap build step (Render doesn’t support swap easily; upgrading instance is simpler).
+- If you prefer S3 for artifacts (to keep the container stateless), switch `STORAGE_BACKEND=s3` and provide S3 creds; you can then drop the Render disk.
+- For stricter CORS, set `CORS_ALLOW_ORIGINS` to your Render URL instead of `*`.
+- Logs: view build and runtime logs in the Render dashboard.
+- Deploys: each push to the tracked branch triggers a rebuild (if auto-deploy is on). You can also trigger manual deploys.
