@@ -10,7 +10,7 @@ COPY frontend ./
 ARG NEXT_PUBLIC_API_BASE=http://localhost:8000
 ENV NEXT_PUBLIC_API_BASE=${NEXT_PUBLIC_API_BASE}
 # Build with static export (Next.js app dir with `output: "export"`). The build writes to ./out.
-RUN npm run build -- --output export \
+RUN npm run build \
     && mv ./out /app/out
 
 # 2) Build the backend
