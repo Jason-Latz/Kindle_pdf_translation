@@ -9,7 +9,10 @@ COPY frontend ./
 # Allow overriding API base at build time (Render sets env at build)
 ARG NEXT_PUBLIC_API_BASE=http://localhost:8000
 ENV NEXT_PUBLIC_API_BASE=${NEXT_PUBLIC_API_BASE}
-RUN npm run build && npx next export -o /app/out
+# Build and export; Next.js may not support -o flag in some versions, so use default out dir then move it.
+RUN npm run build \
+    && npx next export \
+    && mv ./out /app/out
 
 # 2) Build the backend
 FROM python:3.11-slim AS backend
