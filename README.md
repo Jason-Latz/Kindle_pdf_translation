@@ -9,12 +9,19 @@ Turn any text-based PDF into a bilingual learning pack. This project parses a bo
 
 Refer to `BOOK_TRANSLATOR_PROJECT.md` for the roadmap.
 
-## Learning Benefits
+## How the Website Works
 
-- Read the original and translated text together to internalize grammar and tone.
-- Export an EPUB you can send to Kindle for immersive reading on hardware you already use.
-- Generate a CSV flashcard deck for Anki or other SRS tools so you can drill the vocabulary that matters.
-- Track the pipeline stages to see how long-form content is processed end-to-end.
+- **Upload & choose a language:** Drag a PDF (≤100 MB / 600 pages) onto the landing page and pick a target language.
+- **Watch live progress:** The UI streams updates as the backend extracts text, translates chapters, assembles an EPUB, and builds flashcards.
+- **Download artifacts:** When the job finishes you get two links—`book.epub` for Kindle Send-to-Device/AirDrop/USB transfer, and `flashcards.csv` for Anki or any SRS app.
+- **Retry-friendly:** All jobs are idempotent; you can refresh the page or reopen the site later and use your job ID to re-download outputs.
+
+## Why This Way of Learning Works
+
+- **Dual coding:** Reading the source and translation together pairs verbal and visual cues, improving recall and comprehension (Paivio, 1990s lab findings on dual coding).
+- **Retrieval practice:** Flashcards turn the translated text into low-friction recall reps, a technique shown to beat passive review in classroom studies (Roediger & Karpicke, 2006).
+- **Spacing effects:** Exported decks can be scheduled with spaced-repetition algorithms, leveraging the Ebbinghaus forgetting-curve research to retain vocabulary longer.
+- **Context-rich examples:** Long-form text preserves idioms and discourse markers that sentence-level flashcards often strip away, which helps learners internalize natural syntax.
 
 ## Quick Start (Docker Compose)
 
@@ -40,7 +47,7 @@ Stop everything with:
 docker compose -f infra/docker-compose.yml down
 ```
 
-## Manual Setup (Dev Workflow)
+## Manual Setup (Dev Workflow) — Run Frontend + Backend Locally
 
 ### Backend
 ```bash
@@ -61,7 +68,7 @@ npm run dev
 
 For local development, ensure the frontend can reach the backend by keeping `NEXT_PUBLIC_API_BASE=http://localhost:8000`. The Next.js config includes a rewrite so `/api/*` calls are proxied correctly.
 
-## Using the App
+## Using the App (Step-by-Step)
 
 1. Open http://localhost:3000.
 2. Choose a target language and drag-and-drop a PDF (≤100 MB / 600 pages).
@@ -71,6 +78,11 @@ For local development, ensure the frontend can reach the backend by keeping `NEX
    - `flashcards.csv` — vocabulary pairs for spaced repetition apps.
 
 If you trigger jobs directly via API, POST to `/api/jobs` with multipart form fields `file` and `tgt_lang`, then poll `/api/jobs/{id}` and download artifacts from `/api/jobs/{id}/download?file_type=epub|flashcards`.
+
+### Tips for Kindle & Flashcards
+- Send the `.epub` to Kindle via the Kindle app’s “Send to Kindle,” email-to-Kindle, or USB transfer; the file is optimized for current-generation devices.
+- Import `flashcards.csv` into Anki (or similar) using “Field 1 → Front / Field 2 → Back.” Enable spaced repetition for best retention.
+- If translation quality matters most, set `TRANSLATOR_PROVIDER=openai` with an API key; for a free demo keep `hf` to use the Hugging Face pipeline.
 
 ## Make Targets
 
