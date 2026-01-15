@@ -70,3 +70,9 @@ async def test_run_pipeline_persists_paragraphs(monkeypatch: pytest.MonkeyPatch,
     assert manifest_payload["epub_path"]
     assert manifest_payload.get("paragraphs_path")
     assert manifest_payload.get("translations_path")
+    timings = manifest_payload.get("timings_ms")
+    assert isinstance(timings, dict)
+    assert timings.get("extract") is not None
+    assert timings.get("translate") is not None
+    assert timings.get("build_epub") is not None
+    assert timings.get("flashcards") is not None
