@@ -4,6 +4,7 @@ import json
 import os
 
 import pytest
+from pydantic_core import ValidationError
 
 from app.providers import (
     batched,
@@ -116,7 +117,7 @@ def test_get_translation_provider_returns_openai(monkeypatch: pytest.MonkeyPatch
 def test_get_translation_provider_rejects_unknown(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TRANSLATOR_PROVIDER", "unknown")
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(ValidationError):
         get_translation_provider()
 
 

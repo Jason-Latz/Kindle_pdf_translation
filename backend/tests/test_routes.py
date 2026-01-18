@@ -98,7 +98,7 @@ def test_create_job_rejects_unsupported_language(monkeypatch, tmp_path) -> None:
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("DB_MODE", "manifests")
     monkeypatch.setenv("STORAGE_BACKEND", "local")
-    monkeypatch.setenv("TARGET_LANGS", "es,fr")
+    monkeypatch.setenv("TARGET_LANGS", "[\"es\",\"fr\"]")
 
     app = create_app()
     client = TestClient(app)
@@ -116,7 +116,7 @@ def test_create_job_writes_manifest(monkeypatch, tmp_path) -> None:
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("DB_MODE", "manifests")
     monkeypatch.setenv("STORAGE_BACKEND", "local")
-    monkeypatch.setenv("TARGET_LANGS", "es")
+    monkeypatch.setenv("TARGET_LANGS", "[\"es\"]")
 
     async def _noop_pipeline(*_args, **_kwargs):
         return None

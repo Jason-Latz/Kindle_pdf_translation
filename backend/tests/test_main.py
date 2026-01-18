@@ -6,7 +6,7 @@ from app.main import create_app
 
 
 def test_create_app_healthcheck(monkeypatch) -> None:
-    monkeypatch.setenv("CORS_ALLOW_ORIGINS", "https://example.test")
+    monkeypatch.setenv("CORS_ALLOW_ORIGINS", "[\"https://example.test\"]")
 
     app = create_app()
     client = TestClient(app)
