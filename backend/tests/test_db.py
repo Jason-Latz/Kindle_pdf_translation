@@ -19,6 +19,7 @@ def test_manifest_path_creates_directory(tmp_path, monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_get_session_yields_async_session(tmp_path, monkeypatch) -> None:
+    pytest.importorskip("greenlet")
     monkeypatch.chdir(tmp_path)
     (tmp_path / "data").mkdir()
     monkeypatch.setenv("DB_MODE", "sqlite")

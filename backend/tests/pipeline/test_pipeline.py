@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -13,10 +14,30 @@ SAMPLE_PDF = Path(__file__).resolve().parents[3] / "sample_paragraphs.pdf"
 
 @pytest.mark.asyncio
 async def test_run_pipeline_persists_paragraphs(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    hf_model_id = os.getenv("HF_MODEL_ID")
+    if not hf_model_id:
+        pytest.skip("HF_MODEL_ID not set; skipping Hugging Face pipeline test.")
+
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("STORAGE_BACKEND", "local")
     monkeypatch.setenv("DB_MODE", "manifests")
     monkeypatch.setenv("TRANSLATOR_PROVIDER", "hf")
+    monkeypatch.setenv("HF_MODEL_ID", hf_model_id)
+
+    class _StubInferenceClient:
+        def __init__(self, *args, **kwargs) -> None:
+            self.calls = []
+
+        async def text_generation(self, prompt: str, **kwargs) -> str:
+            self.calls.append({"prompt": prompt, **kwargs})
+            payload = json.loads(prompt.split("\n\n")[-1])
+            translations = [f"[{payload['target_language']}] {text}" for text in payload["paragraphs"]]
+            return json.dumps({"translations": translations})
+
+    monkeypatch.setattr(
+        "app.providers.hf_inference_provider.AsyncInferenceClient",
+        _StubInferenceClient,
+    )
 
     job_id = "job123"
     uploaded_name = "sample_paragraphs.pdf"
