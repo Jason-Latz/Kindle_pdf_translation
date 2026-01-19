@@ -15,6 +15,7 @@ from ..models import Job
 from ..storage.local import LocalStorage
 from ..storage.s3_compat import S3Config, S3Storage
 from ..utils.logging import configure_logging
+from ..utils.telemetry import PipelineTelemetry, track_stage
 from .build_epub import build_epub
 from .extract import extract_paragraphs
 from .translate import translate_paragraphs
@@ -199,6 +200,7 @@ async def run_pipeline(context: PipelineContext) -> None:
     settings = get_settings()
     storage = _get_storage(settings)
     logger = configure_logging(context.job_id)
+    telemetry = PipelineTelemetry(context.job_id, logger)
 
     paragraphs_location: str | None = None
     artifact_location: str | None = None
@@ -219,7 +221,8 @@ async def run_pipeline(context: PipelineContext) -> None:
             context.source_path,
             context.job_id,
         )
-        paragraphs = await extract_paragraphs(source_path)
+        async with track_stage(telemetry, "extract", details={"source": str(source_path)}):
+            paragraphs = await extract_paragraphs(source_path)
         await _update_job_state(
             context.job_id,
             status="processing",
@@ -273,14 +276,19 @@ async def run_pipeline(context: PipelineContext) -> None:
                 pct=pct,
             )
 
-        translations, translations_location = await translate_paragraphs(
-            context.job_id,
-            storage,
-            target_lang=context.target_lang,
-            paragraphs=paragraphs,
-            paragraphs_location=paragraphs_location,
-            progress_callback=_translate_progress,
-        )
+        async with track_stage(
+            telemetry,
+            "translate",
+            details={"paragraphs": len(paragraphs), "target_lang": context.target_lang},
+        ):
+            translations, translations_location = await translate_paragraphs(
+                context.job_id,
+                storage,
+                target_lang=context.target_lang,
+                paragraphs=paragraphs,
+                paragraphs_location=paragraphs_location,
+                progress_callback=_translate_progress,
+            )
 
         if settings.db_mode == "manifests" and translations_location:
             extra_payload["translations_path"] = translations_location
@@ -309,18 +317,23 @@ async def run_pipeline(context: PipelineContext) -> None:
         artifact_base = _artifact_base_name(context)
         artifact_name = f"{artifact_base}.epub"
 
-        if isinstance(storage, LocalStorage):
-            artifact_path = storage.artifact_path(context.job_id, artifact_name)
-            await build_epub(translations, artifact_path, metadata)
-            artifact_location = str(artifact_path)
-        else:  # S3Storage
-            key = f"artifacts/{context.job_id}/{artifact_name}"
-            with tempfile.TemporaryDirectory(prefix=f"epub-{context.job_id}-") as tmp_output_dir:
-                tmp_epub_path = Path(tmp_output_dir) / artifact_name
-                await build_epub(translations, tmp_epub_path, metadata)
-                with tmp_epub_path.open("rb") as handle:
-                    storage.put_artifact(key, handle)
-            artifact_location = key
+        async with track_stage(
+            telemetry,
+            "build_epub",
+            details={"artifact_name": artifact_name},
+        ):
+            if isinstance(storage, LocalStorage):
+                artifact_path = storage.artifact_path(context.job_id, artifact_name)
+                await build_epub(translations, artifact_path, metadata)
+                artifact_location = str(artifact_path)
+            else:  # S3Storage
+                key = f"artifacts/{context.job_id}/{artifact_name}"
+                with tempfile.TemporaryDirectory(prefix=f"epub-{context.job_id}-") as tmp_output_dir:
+                    tmp_epub_path = Path(tmp_output_dir) / artifact_name
+                    await build_epub(translations, tmp_epub_path, metadata)
+                    with tmp_epub_path.open("rb") as handle:
+                        storage.put_artifact(key, handle)
+                artifact_location = key
 
         await _update_job_state(
             context.job_id,
@@ -341,26 +354,31 @@ async def run_pipeline(context: PipelineContext) -> None:
         )
 
         flashcards_name = f"{artifact_base}.csv"
-        if isinstance(storage, LocalStorage):
-            flashcards_path = storage.artifact_path(context.job_id, flashcards_name)
-            await generate_flashcards(
-                translations,
-                flashcards_path,
-                language_code=context.target_lang,
-            )
-            cards_location = str(flashcards_path)
-        else:
-            key = f"artifacts/{context.job_id}/{flashcards_name}"
-            with tempfile.TemporaryDirectory(prefix=f"cards-{context.job_id}-") as tmp_dir_path:
-                tmp_csv_path = Path(tmp_dir_path) / flashcards_name
+        async with track_stage(
+            telemetry,
+            "flashcards",
+            details={"artifact_name": flashcards_name},
+        ):
+            if isinstance(storage, LocalStorage):
+                flashcards_path = storage.artifact_path(context.job_id, flashcards_name)
                 await generate_flashcards(
                     translations,
-                    tmp_csv_path,
+                    flashcards_path,
                     language_code=context.target_lang,
                 )
-                with tmp_csv_path.open("rb") as handle:
-                    storage.put_artifact(key, handle)
-            cards_location = key
+                cards_location = str(flashcards_path)
+            else:
+                key = f"artifacts/{context.job_id}/{flashcards_name}"
+                with tempfile.TemporaryDirectory(prefix=f"cards-{context.job_id}-") as tmp_dir_path:
+                    tmp_csv_path = Path(tmp_dir_path) / flashcards_name
+                    await generate_flashcards(
+                        translations,
+                        tmp_csv_path,
+                        language_code=context.target_lang,
+                    )
+                    with tmp_csv_path.open("rb") as handle:
+                        storage.put_artifact(key, handle)
+                cards_location = key
 
         await _update_job_state(
             context.job_id,
@@ -379,6 +397,7 @@ async def run_pipeline(context: PipelineContext) -> None:
                 final_extra["translations_path"] = translations_location
             if cards_location and "flashcards_path" not in final_extra:
                 final_extra["flashcards_path"] = cards_location
+            final_extra["timings_ms"] = telemetry.summary_ms()
 
         await _update_job_state(
             context.job_id,

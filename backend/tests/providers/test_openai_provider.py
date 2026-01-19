@@ -15,6 +15,9 @@ class _DummyResponses:
         self.calls: list[dict[str, Any]] = []
         self._index = 0
 
+    async def parse(self, **kwargs):
+        return await self.create(**kwargs)
+
     async def create(self, **kwargs):
         self.calls.append(kwargs)
         payload = self._outputs[self._index]
@@ -64,7 +67,7 @@ async def test_translate_batch_handles_small_chunks(monkeypatch: pytest.MonkeyPa
 
 
 @pytest.mark.asyncio
-async def test_translate_batch_raises_on_mismatched_lengths(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_translate_batch_allows_mismatched_lengths(monkeypatch: pytest.MonkeyPatch) -> None:
     paragraphs = ["One", "Two"]
     outputs = [["Uno"]]
     _patch_client(monkeypatch, outputs)
@@ -76,8 +79,9 @@ async def test_translate_batch_raises_on_mismatched_lengths(monkeypatch: pytest.
         reserved_completion_tokens=10,
     )
 
-    with pytest.raises(RuntimeError):
-        await provider.translate_batch(paragraphs, src_lang="en", tgt_lang="es")
+    result = await provider.translate_batch(paragraphs, src_lang="en", tgt_lang="es")
+
+    assert result == ["Uno"]
 
 
 @pytest.mark.asyncio
@@ -87,6 +91,9 @@ async def test_translate_batch_rejects_non_json(monkeypatch: pytest.MonkeyPatch)
     class _BadResponses:
         def __init__(self):
             self.calls = []
+
+        async def parse(self, **kwargs):
+            return await self.create(**kwargs)
 
         async def create(self, **kwargs):
             self.calls.append(kwargs)
@@ -105,3 +112,48 @@ async def test_translate_batch_rejects_non_json(monkeypatch: pytest.MonkeyPatch)
 
     with pytest.raises(RuntimeError):
         await provider.translate_batch(paragraphs, src_lang="en", tgt_lang="es")
+
+
+def test_collect_response_text_prefers_output_text_list() -> None:
+    response = SimpleNamespace(output_text=["a", "b", "c"])
+
+    assert OpenAIProvider._collect_response_text(response) == "abc"
+
+
+def test_collect_response_text_parses_output_blocks() -> None:
+    response = SimpleNamespace(
+        output=[
+            SimpleNamespace(
+                content=[
+                    SimpleNamespace(type="output_text", text="hello"),
+                    SimpleNamespace(type="unknown", content=[" ", "world"]),
+                ]
+            )
+        ]
+    )
+
+    assert OpenAIProvider._collect_response_text(response) == "hello world"
+
+
+def test_collect_response_text_parses_choices() -> None:
+    response = {
+        "choices": [
+            {"message": {"content": ["foo", "bar"]}},
+            {"text": "baz"},
+        ]
+    }
+
+    assert OpenAIProvider._collect_response_text(response) == "foobarbaz"
+
+
+def test_extract_translations_accepts_results_key() -> None:
+    response = SimpleNamespace(output_text='{"results": ["uno", "dos"]}')
+
+    assert OpenAIProvider._extract_translations(response) == ["uno", "dos"]
+
+
+def test_extract_translations_rejects_non_list() -> None:
+    response = SimpleNamespace(output_text='{"translations": "nope"}')
+
+    with pytest.raises(RuntimeError):
+        OpenAIProvider._extract_translations(response)

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import json
+import os
+
 import pytest
+from pydantic_core import ValidationError
 
 from app.providers import (
     batched,
@@ -8,6 +12,7 @@ from app.providers import (
     estimate_token_count,
     get_translation_provider,
 )
+from app.providers.openai_provider import OpenAIProvider
 
 
 def test_batched_chunks_into_fixed_sizes() -> None:
@@ -62,6 +67,8 @@ def test_chunk_by_tokens_validates_inputs() -> None:
     with pytest.raises(ValueError):
         chunk_by_tokens(["a"], max_tokens=0)
     with pytest.raises(ValueError):
+        chunk_by_tokens(["a"], max_tokens=10, reserved_tokens=-1)
+    with pytest.raises(ValueError):
         chunk_by_tokens(["a"], max_tokens=10, reserved_tokens=11)
     with pytest.raises(ValueError):
         chunk_by_tokens(["a"], max_tokens=10, max_completion_tokens=0)
@@ -71,6 +78,20 @@ def test_chunk_by_tokens_validates_inputs() -> None:
             max_tokens=10,
             max_completion_tokens=20,
             reserved_completion_tokens=25,
+        )
+    with pytest.raises(ValueError):
+        chunk_by_tokens(
+            ["a"],
+            max_tokens=10,
+            max_completion_tokens=10,
+            reserved_completion_tokens=-1,
+        )
+    with pytest.raises(ValueError):
+        chunk_by_tokens(
+            ["a"],
+            max_tokens=10,
+            max_completion_tokens=10,
+            reserved_completion_tokens=10,
         )
     with pytest.raises(ValueError):
         chunk_by_tokens(["a"], max_tokens=10, completion_ratio=0)
@@ -84,9 +105,68 @@ def test_get_translation_provider_requires_openai_key(monkeypatch: pytest.Monkey
         get_translation_provider()
 
 
+def test_get_translation_provider_returns_openai(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TRANSLATOR_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    provider = get_translation_provider()
+
+    assert isinstance(provider, OpenAIProvider)
+
+
+def test_get_translation_provider_rejects_unknown(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TRANSLATOR_PROVIDER", "unknown")
+
+    with pytest.raises(ValidationError):
+        get_translation_provider()
+
+
+def test_chunk_by_tokens_flushes_current_when_next_is_too_large() -> None:
+    batches = chunk_by_tokens(
+        ["short", "x" * 100],
+        max_tokens=10,
+        reserved_tokens=0,
+    )
+    assert batches[0] == ["short"]
+    assert batches[1] == ["x" * 100]
+
+
+def test_chunk_by_tokens_flushes_on_completion_budget() -> None:
+    batches = chunk_by_tokens(
+        ["tiny", "x" * 80],
+        max_tokens=200,
+        reserved_tokens=0,
+        max_completion_tokens=4,
+        completion_ratio=1.0,
+    )
+    assert batches[0] == ["tiny"]
+    assert batches[1] == ["x" * 80]
+
+
 @pytest.mark.asyncio
-async def test_get_translation_provider_returns_stub(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_get_translation_provider_returns_hf_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    hf_model_id = os.getenv("HF_MODEL_ID")
+    if not hf_model_id:
+        pytest.skip("HF_MODEL_ID not set; skipping Hugging Face provider test.")
+
     monkeypatch.setenv("TRANSLATOR_PROVIDER", "hf")
+    monkeypatch.setenv("HF_MODEL_ID", hf_model_id)
+
+    class _StubInferenceClient:
+        def __init__(self, *args, **kwargs) -> None:
+            self.calls = []
+
+        async def text_generation(self, prompt: str, **kwargs) -> str:
+            self.calls.append({"prompt": prompt, **kwargs})
+            payload = json.loads(prompt.split("\n\n")[-1])
+            translations = [f"[{payload['target_language']}] {text}" for text in payload["paragraphs"]]
+            return json.dumps({"translations": translations})
+
+    monkeypatch.setattr(
+        "app.providers.hf_inference_provider.AsyncInferenceClient",
+        _StubInferenceClient,
+    )
+
     provider = get_translation_provider()
 
     paragraphs = ["hello world"]
