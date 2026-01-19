@@ -27,6 +27,7 @@ This document summarizes the backend test suite and groups coverage by test type
 
 ## Accuracy and Quality Checks (Optional)
 - `backend/tests/accuracy/test_translation_accuracy.py`: reference translation similarity checks.
+  - Includes BLEU scoring via `sacrebleu` for the same reference pairs.
   - Requires `TRANSLATION_ACCURACY=1`, `TRANSLATOR_PROVIDER=openai`, and `OPENAI_API_KEY`.
 - Fixtures used by accuracy tests:
   - `backend/tests/fixtures/accuracy/source_en.txt`
