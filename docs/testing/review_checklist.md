@@ -1,6 +1,6 @@
 # Review Checklist — Backend Code
 
-Use this checklist when reviewing pipeline and provider changes.
+
 
 ## Correctness
 - [ ] Input validation is explicit and error messages are actionable.
