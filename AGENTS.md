@@ -16,3 +16,4 @@ Do not leave that learning only in chat history.
 ## Learned Preferences
 
 - Split large refactors into many focused commits instead of leaving them as a single umbrella commit. When Jason asks for a history rewrite, aim for at least 10 logically scoped commits if the change is broad enough to support it.
+- Keep a single canonical primary branch named `main`. If a legacy branch such as `mvp` has effectively become the default branch, rename or realign branches promptly so there is no ambiguity about which branch is authoritative.
