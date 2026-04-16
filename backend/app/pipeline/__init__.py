@@ -34,6 +34,11 @@ class PipelineContext:
 _SENTINEL = object()
 
 
+def _uses_relational_db(settings: Settings) -> bool:
+    """Return whether job metadata is stored in SQLAlchemy-backed storage."""
+    return settings.db_mode in {"sqlite", "postgres"}
+
+
 async def _update_job_state(
     job_id: str,
     *,
@@ -48,7 +53,7 @@ async def _update_job_state(
     """Persist stage/status updates on the configured backend."""
     settings = get_settings()
 
-    if settings.db_mode == "sqlite":
+    if _uses_relational_db(settings):
         async with get_session() as session:
             job = await session.get(Job, job_id)
             if job is None:
@@ -421,7 +426,7 @@ async def run_pipeline(context: PipelineContext) -> None:
         if tmp_dir:
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
-    if settings.db_mode not in {"sqlite", "manifests"}:
+    if settings.db_mode not in {"sqlite", "postgres", "manifests"}:
         raise RuntimeError(f"Unsupported db mode '{settings.db_mode}'")
 
 
