@@ -28,7 +28,9 @@ class Settings(BaseSettings):
     s3_secret_key: str | None = Field(default=None, alias="S3_SECRET_KEY")
     s3_bucket: str = Field(default="book-translator", alias="S3_BUCKET")
 
-    db_mode: Literal["sqlite", "manifests"] = Field(default="sqlite", alias="DB_MODE")
+    db_mode: Literal["sqlite", "postgres", "manifests"] = Field(
+        default="sqlite", alias="DB_MODE"
+    )
     db_url: str = Field(default="sqlite+aiosqlite:///./data/app.db", alias="DB_URL")
 
     max_pdf_mb: int = Field(default=100, alias="MAX_PDF_MB")
