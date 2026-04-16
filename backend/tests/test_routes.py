@@ -55,8 +55,9 @@ def test_get_storage_rejects_unknown_backend() -> None:
         _get_storage(settings)
 
 
+@pytest.mark.parametrize("db_mode", ["sqlite", "postgres"])
 @pytest.mark.asyncio
-async def test_persist_initial_job_sqlite(monkeypatch) -> None:
+async def test_persist_initial_job_relational_db(monkeypatch, db_mode: str) -> None:
     class _Session:
         def __init__(self) -> None:
             self.added = None
@@ -80,7 +81,7 @@ async def test_persist_initial_job_sqlite(monkeypatch) -> None:
     monkeypatch.setattr("app.routes.get_session", _get_session)
     monkeypatch.setattr("app.routes.ensure_schema", _ensure_schema)
 
-    settings = SimpleNamespace(db_mode="sqlite")
+    settings = SimpleNamespace(db_mode=db_mode)
     response = await _persist_initial_job(
         settings=settings,
         job_id="job1",
