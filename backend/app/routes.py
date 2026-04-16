@@ -20,6 +20,11 @@ from .storage.s3_compat import S3Config, S3Storage
 router = APIRouter(tags=["jobs"])
 
 
+def _uses_relational_db(settings: Settings) -> bool:
+    """Return whether job metadata is stored in SQLAlchemy-backed storage."""
+    return settings.db_mode in {"sqlite", "postgres"}
+
+
 class JobStatusResponse(BaseModel):
     """API response schema for job status information."""
 
@@ -129,7 +134,7 @@ async def read_job(job_id: str) -> JobStatusResponse:
     """Return the current status for a translation job."""
     settings = get_settings()
 
-    if settings.db_mode == "sqlite":
+    if _uses_relational_db(settings):
         await ensure_schema()
         async with get_session() as session:
             job = await session.get(Job, job_id)
@@ -172,7 +177,7 @@ async def download_artifact(job_id: str, file_type: str = "epub") -> StreamingRe
             status_code=400, detail=f"Unsupported artifact type '{file_type}'"
         )
 
-    if settings.db_mode == "sqlite":
+    if _uses_relational_db(settings):
         await ensure_schema()
         async with get_session() as session:
             job = await session.get(Job, job_id)
@@ -251,7 +256,7 @@ async def _persist_initial_job(
     source_location: str,
 ) -> JobStatusResponse:
     """Record the initial job state using the configured persistence backend."""
-    if settings.db_mode == "sqlite":
+    if _uses_relational_db(settings):
         await ensure_schema()
         async with get_session() as session:
             job = Job(
