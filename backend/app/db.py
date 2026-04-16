@@ -22,11 +22,11 @@ _schema_initialized: bool = False
 
 
 def _ensure_engine() -> None:
-    """Lazy-create the SQLAlchemy engine when running in sqlite mode."""
+    """Lazy-create the SQLAlchemy engine when running in relational DB modes."""
     global _engine, _session_factory  # noqa: PLW0603 (module-level cache)
 
     settings = get_settings()
-    if settings.db_mode != "sqlite":
+    if settings.db_mode not in {"sqlite", "postgres"}:
         return
 
     if _engine is None:
@@ -35,11 +35,11 @@ def _ensure_engine() -> None:
 
 
 async def ensure_schema() -> None:
-    """Create database tables once when running in sqlite mode."""
+    """Create database tables once when running in relational DB modes."""
     global _schema_initialized  # noqa: PLW0603
 
     settings = get_settings()
-    if settings.db_mode != "sqlite" or _schema_initialized:
+    if settings.db_mode not in {"sqlite", "postgres"} or _schema_initialized:
         return
 
     _ensure_engine()
@@ -53,10 +53,10 @@ async def ensure_schema() -> None:
 
 @asynccontextmanager
 async def get_session() -> AsyncIterator[AsyncSession]:
-    """Yield an async SQLAlchemy session when the service is configured for SQLite."""
+    """Yield an async SQLAlchemy session when the service uses a relational DB."""
     settings = get_settings()
-    if settings.db_mode != "sqlite":
-        raise RuntimeError("Database sessions are only available in sqlite mode")
+    if settings.db_mode not in {"sqlite", "postgres"}:
+        raise RuntimeError("Database sessions are only available in relational DB modes")
 
     _ensure_engine()
     assert _session_factory is not None  # nosec - guarded by _ensure_engine

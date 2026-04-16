@@ -1,4 +1,4 @@
-"""SQLAlchemy models used when the app runs in sqlite mode."""
+"""SQLAlchemy models used when the app runs in relational DB modes."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ Base = declarative_base()
 
 
 class Job(Base):
-    """Translation job metadata persisted in SQLite."""
+    """Translation job metadata persisted in SQLAlchemy-backed storage."""
 
     __tablename__ = "jobs"
 
