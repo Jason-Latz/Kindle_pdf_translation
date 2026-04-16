@@ -42,3 +42,4 @@ def _reset_db_state(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(db_module, "_engine", None, raising=False)
     monkeypatch.setattr(db_module, "_session_factory", None, raising=False)
+    monkeypatch.setattr(db_module, "_schema_initialized", False, raising=False)

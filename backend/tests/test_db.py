@@ -17,7 +17,7 @@ def test_manifest_path_creates_directory(tmp_path, monkeypatch) -> None:
     assert path.name == "job99.json"
 
 
-def test_ensure_engine_skips_when_not_sqlite(monkeypatch) -> None:
+def test_ensure_engine_skips_when_not_relational(monkeypatch) -> None:
     monkeypatch.setattr(db, "get_settings", lambda: SimpleNamespace(db_mode="manifests"))
     monkeypatch.setattr(db, "create_async_engine", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError))
     monkeypatch.setattr(db, "_engine", None, raising=False)
@@ -29,8 +29,15 @@ def test_ensure_engine_skips_when_not_sqlite(monkeypatch) -> None:
     assert db._session_factory is None
 
 
+@pytest.mark.parametrize(
+    ("db_mode", "db_url"),
+    [
+        ("sqlite", "sqlite+aiosqlite:///./data/test.db"),
+        ("postgres", "postgresql+asyncpg://postgres:password@example.com:5432/postgres"),
+    ],
+)
 @pytest.mark.asyncio
-async def test_ensure_schema_initializes_engine(monkeypatch) -> None:
+async def test_ensure_schema_initializes_engine(monkeypatch, db_mode: str, db_url: str) -> None:
     class _DummyBegin:
         def __init__(self) -> None:
             self.ran_sync = False
@@ -64,7 +71,7 @@ async def test_ensure_schema_initializes_engine(monkeypatch) -> None:
     monkeypatch.setattr(
         db,
         "get_settings",
-        lambda: SimpleNamespace(db_mode="sqlite", db_url="sqlite+aiosqlite:///./data/test.db"),
+        lambda: SimpleNamespace(db_mode=db_mode, db_url=db_url),
     )
     monkeypatch.setattr(db, "create_async_engine", lambda *args, **kwargs: dummy_engine)
     monkeypatch.setattr(db, "async_sessionmaker", lambda *args, **kwargs: _DummyFactory())
@@ -93,7 +100,7 @@ async def test_get_session_yields_async_session(tmp_path, monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_session_errors_when_not_sqlite(monkeypatch) -> None:
+async def test_get_session_errors_when_not_relational(monkeypatch) -> None:
     monkeypatch.setattr(db, "get_settings", lambda: SimpleNamespace(db_mode="manifests"))
 
     with pytest.raises(RuntimeError):
@@ -101,8 +108,17 @@ async def test_get_session_errors_when_not_sqlite(monkeypatch) -> None:
             pass
 
 
+@pytest.mark.parametrize(
+    ("db_mode", "db_url"),
+    [
+        ("sqlite", "sqlite+aiosqlite:///./data/test.db"),
+        ("postgres", "postgresql+asyncpg://postgres:password@example.com:5432/postgres"),
+    ],
+)
 @pytest.mark.asyncio
-async def test_get_session_uses_stub_factory(monkeypatch) -> None:
+async def test_get_session_uses_stub_factory(
+    monkeypatch, db_mode: str, db_url: str
+) -> None:
     class _DummySession:
         def __init__(self) -> None:
             self.closed = False
@@ -119,7 +135,7 @@ async def test_get_session_uses_stub_factory(monkeypatch) -> None:
     monkeypatch.setattr(
         db,
         "get_settings",
-        lambda: SimpleNamespace(db_mode="sqlite", db_url="sqlite+aiosqlite:///./data/test.db"),
+        lambda: SimpleNamespace(db_mode=db_mode, db_url=db_url),
     )
     monkeypatch.setattr(db, "create_async_engine", lambda *args, **kwargs: dummy_engine)
     monkeypatch.setattr(db, "async_sessionmaker", lambda *args, **kwargs: _DummyFactory())
