@@ -4,6 +4,7 @@ pydantic>=2.7
 pydantic-settings>=2.3
 sqlalchemy>=2.0
 aiosqlite
+asyncpg
 boto3
 pymupdf
 jinja2
