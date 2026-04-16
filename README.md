@@ -23,6 +23,67 @@ Refer to `BOOK_TRANSLATOR_PROJECT.md` for the roadmap.
 - **Spacing effects:** Exported decks can be scheduled with spaced-repetition algorithms, leveraging the Ebbinghaus forgetting-curve research to retain vocabulary longer.
 - **Context-rich examples:** Long-form text preserves idioms and discourse markers that sentence-level flashcards often strip away, which helps learners internalize natural syntax.
 
+## Vercel + S3 + Supabase (Recommended Deployment)
+
+This repo is now structured so you can run production with:
+
+- **Vercel project #1 (frontend):** `frontend/`
+- **Vercel project #2 (API):** `backend/` (FastAPI serverless function)
+- **S3 bucket:** uploads + artifacts
+- **Supabase Postgres (recommended):** durable job status and metadata
+
+> You can still use `DB_MODE=manifests` for ultra-lean demos, but Supabase is strongly recommended for Vercel because local filesystem state is ephemeral.
+
+### 1) Create cloud resources
+
+1. Create an S3 bucket (for example `book-translator-prod`).
+2. Create a Supabase project and copy the Postgres connection string.
+3. Generate API keys for your translation provider (OpenAI and/or HF).
+
+### 2) Deploy API on Vercel
+
+Set Vercel project root to `backend/` and configure these environment variables:
+
+```bash
+STORAGE_BACKEND=s3
+S3_BUCKET=book-translator-prod
+S3_ENDPOINT=https://s3.amazonaws.com
+S3_ACCESS_KEY=...
+S3_SECRET_KEY=...
+
+DB_MODE=postgres
+DB_URL=postgresql+asyncpg://postgres:<password>@<host>:5432/postgres
+
+TRANSLATOR_PROVIDER=openai
+OPENAI_API_KEY=...
+
+CORS_ALLOW_ORIGINS=https://<your-frontend-domain>
+TARGET_LANGS=es,fr,de,it,pt
+```
+
+After deploy, verify:
+
+```bash
+https://<your-api-domain>/healthz
+```
+
+### 3) Deploy Frontend on Vercel
+
+Set Vercel project root to `frontend/` and set:
+
+```bash
+NEXT_PUBLIC_API_BASE=https://<your-api-domain>
+```
+
+The frontend rewrite sends `/api/*` requests to your backend base URL.
+
+### 4) Validate end-to-end
+
+1. Open the frontend domain.
+2. Upload a small PDF.
+3. Poll job page updates until `done`.
+4. Download EPUB and flashcards.
+
 ## Quick Start (Docker Compose)
 
 Prerequisites: Docker Engine + Docker Compose plugin.
