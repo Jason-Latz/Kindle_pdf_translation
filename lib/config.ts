@@ -43,7 +43,28 @@ export type AppConfig = {
 let cachedConfig: AppConfig | null = null
 
 function normalizeLang(value: string): string {
-  return value.trim().toLowerCase()
+  return value.trim().toLowerCase().replace(/^[\[\]"']+|[\[\]"']+$/g, '')
+}
+
+function parseTargetLangs(raw: string): string[] {
+  const trimmed = raw.trim()
+
+  if (!trimmed) {
+    return []
+  }
+
+  if (trimmed.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(trimmed)
+      if (Array.isArray(parsed)) {
+        return parsed.map((value) => normalizeLang(String(value))).filter(Boolean)
+      }
+    } catch {
+      // Fall back to comma splitting below.
+    }
+  }
+
+  return trimmed.split(',').map(normalizeLang).filter(Boolean)
 }
 
 export function getConfig(): AppConfig {
@@ -60,9 +81,7 @@ export function getConfig(): AppConfig {
     hfApiToken: env.HF_API_TOKEN,
     hfModelId: env.HF_MODEL_ID,
     hfBaseUrl: env.HF_BASE_URL,
-    targetLangs: env.TARGET_LANGS.split(',')
-      .map(normalizeLang)
-      .filter(Boolean),
+    targetLangs: parseTargetLangs(env.TARGET_LANGS),
     maxPdfBytes: env.MAX_PDF_MB * 1024 * 1024,
     maxPages: env.MAX_PAGES,
     maxFlashcards: env.MAX_FLASHCARDS,

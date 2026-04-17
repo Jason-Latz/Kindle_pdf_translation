@@ -33,6 +33,25 @@ describe('parseCreateJobRequest', () => {
     })
   })
 
+  it('accepts legacy json-array target language env values', async () => {
+    process.env.TARGET_LANGS = '["es","fr"]'
+    const { parseCreateJobRequest } = await loadValidationModule()
+
+    expect(
+      parseCreateJobRequest({
+        sourcePathname: 'source/example.pdf',
+        filename: 'example.pdf',
+        sizeBytes: 1024,
+        targetLang: 'es',
+      }),
+    ).toEqual({
+      sourcePathname: 'source/example.pdf',
+      filename: 'example.pdf',
+      sizeBytes: 1024,
+      targetLang: 'es',
+    })
+  })
+
   it('rejects oversized uploads', async () => {
     process.env.MAX_PDF_MB = '1'
     const { parseCreateJobRequest } = await loadValidationModule()
