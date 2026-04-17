@@ -3,6 +3,10 @@
 backend/.env
 data/
 objectdata/
+node_modules/
+.next/
+.turbo/
+app/.well-known/workflow/
 frontend/node_modules
 frontend/.next/
 frontend/.turbo/
