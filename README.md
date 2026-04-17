@@ -1,162 +1,96 @@
-# Book Translator (Lean MVP)
+# Book Translator
 
-Turn any text-based PDF into a bilingual learning pack. This project parses a book, translates it into a supported language, exports a Kindle-ready EPUB, and generates a flashcard deck so you can reinforce new vocabulary as you read.
+Turn a text-based PDF into a translated EPUB and a flashcard CSV.
 
-- **Backend:** FastAPI, Pydantic v2, optional SQLAlchemy + SQLite.
-- **Pipeline:** `extract → translate → build_epub → flashcards` managed via FastAPI background tasks.
-- **Storage:** Local filesystem by default; S3-compatible (MinIO/AWS) when configured.
-- **Frontend:** Single-page Next.js UI for uploads, progress tracking, and artifact downloads.
+The app is now a single root-level Next.js project. PDFs upload directly to private Vercel Blob storage, job metadata lives in Postgres, a `jobs` queue buffers new work, and one Workflow run owns the long-running translation pipeline.
 
-Refer to `BOOK_TRANSLATOR_PROJECT.md` for the roadmap.
+## Architecture
 
-## How the Website Works
+- `app/`: Next.js App Router pages and API routes
+- `components/`: upload, progress, and download UI
+- `lib/`: config, Blob/Postgres helpers, validation, pipeline stages, workflow
+- `vercel.json`: queue trigger for `app/api/queues/jobs/route.ts`
 
-- **Upload & choose a language:** Drag a PDF (≤100 MB / 600 pages) onto the landing page and pick a target language.
-- **Watch live progress:** The UI streams updates as the backend extracts text, translates chapters, assembles an EPUB, and builds flashcards.
-- **Download artifacts:** When the job finishes you get two links—`book.epub` for Kindle Send-to-Device/AirDrop/USB transfer, and `flashcards.csv` for Anki or any SRS app.
-- **Retry-friendly:** All jobs are idempotent; you can refresh the page or reopen the site later and use your job ID to re-download outputs.
+The runtime API surface is:
 
-## Why This Way of Learning Works
+- `POST /api/uploads/pdf`
+- `POST /api/jobs`
+- `GET /api/jobs/:id`
+- `GET /api/jobs/:id/download?file_type=epub|flashcards`
+- `POST /api/queues/jobs`
+- `GET /api/healthz`
 
-- **Dual coding:** Reading the source and translation together pairs verbal and visual cues, improving recall and comprehension (Paivio, 1990s lab findings on dual coding).
-- **Retrieval practice:** Flashcards turn the translated text into low-friction recall reps, a technique shown to beat passive review in classroom studies (Roediger & Karpicke, 2006).
-- **Spacing effects:** Exported decks can be scheduled with spaced-repetition algorithms, leveraging the Ebbinghaus forgetting-curve research to retain vocabulary longer.
-- **Context-rich examples:** Long-form text preserves idioms and discourse markers that sentence-level flashcards often strip away, which helps learners internalize natural syntax.
+## Environment
 
-## Vercel + S3 + Supabase (Recommended Deployment)
-
-This repo is now structured so you can run production with:
-
-- **Vercel project #1 (frontend):** `frontend/`
-- **Vercel project #2 (API):** `backend/` (FastAPI serverless function)
-- **S3 bucket:** uploads + artifacts
-- **Supabase Postgres (recommended):** durable job status and metadata
-
-> You can still use `DB_MODE=manifests` for ultra-lean demos, but Supabase is strongly recommended for Vercel because local filesystem state is ephemeral.
-
-### 1) Create cloud resources
-
-1. Create an S3 bucket (for example `book-translator-prod`).
-2. Create a Supabase project and copy the Postgres connection string.
-3. Generate API keys for your translation provider (OpenAI and/or HF).
-
-### 2) Deploy API on Vercel
-
-Set Vercel project root to `backend/` and configure these environment variables:
+Copy `.env.example` and set the values you need:
 
 ```bash
-STORAGE_BACKEND=s3
-S3_BUCKET=book-translator-prod
-S3_ENDPOINT=https://s3.amazonaws.com
-S3_ACCESS_KEY=...
-S3_SECRET_KEY=...
-
-DB_MODE=postgres
-DB_URL=postgresql+asyncpg://postgres:<password>@<host>:5432/postgres
-
-TRANSLATOR_PROVIDER=openai
-OPENAI_API_KEY=...
-
-CORS_ALLOW_ORIGINS=https://<your-frontend-domain>
-TARGET_LANGS=es,fr,de,it,pt
+cp .env.example .env
 ```
 
-After deploy, verify:
+Required for the Vercel-native flow:
+
+- `BLOB_READ_WRITE_TOKEN`
+- `POSTGRES_URL` or `DATABASE_URL`
+- `TRANSLATOR_PROVIDER=openai|hf`
+- `OPENAI_API_KEY` when using OpenAI
+- `HF_MODEL_ID` and optionally `HF_API_TOKEN` when using Hugging Face
+
+Optional:
+
+- `OPENAI_MODEL`
+- `OPENAI_BASE_URL`
+- `HF_BASE_URL`
+- `TARGET_LANGS`
+- `MAX_PDF_MB`
+- `MAX_PAGES`
+- `MAX_FLASHCARDS`
+- `QUEUE_REGION`
+
+## Local Development
+
+Install and run:
 
 ```bash
-https://<your-api-domain>/healthz
-```
-
-### 3) Deploy Frontend on Vercel
-
-Set Vercel project root to `frontend/` and set:
-
-```bash
-NEXT_PUBLIC_API_BASE=https://<your-api-domain>
-```
-
-The frontend rewrite sends `/api/*` requests to your backend base URL.
-
-### 4) Validate end-to-end
-
-1. Open the frontend domain.
-2. Upload a small PDF.
-3. Poll job page updates until `done`.
-4. Download EPUB and flashcards.
-
-## Quick Start (Docker Compose)
-
-Prerequisites: Docker Engine + Docker Compose plugin.
-
-1. **Copy environment defaults**
-   ```bash
-   cp .env.example .env
-   ```
-   - For a no-API-key demo set `TRANSLATOR_PROVIDER=hf`.
-   - Add `OPENAI_API_KEY` if you want real translations via OpenAI.
-2. **Build and run**
-   ```bash
-   docker compose -f infra/docker-compose.yml up --build
-   ```
-   - Services: `backend` (FastAPI), `frontend` (Next.js), `minio` (S3-compatible storage, optional).
-3. **Visit**
-   - Frontend: http://localhost:3000
-   - API docs: http://localhost:8000/docs
-
-Stop everything with:
-```bash
-docker compose -f infra/docker-compose.yml down
-```
-
-## Manual Setup (Dev Workflow) — Run Frontend + Backend Locally
-
-### Backend
-```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-cp ../.env.example ../.env  # if you have not already
-uvicorn app.main:app --reload --port 8000
-```
-
-### Frontend
-```bash
-cd frontend
 npm install
 npm run dev
 ```
 
-For local development, ensure the frontend can reach the backend by keeping `NEXT_PUBLIC_API_BASE=http://localhost:8000`. The Next.js config includes a rewrite so `/api/*` calls are proxied correctly.
+Then open `http://localhost:3000`.
 
-## Using the App (Step-by-Step)
+Notes:
 
-1. Open http://localhost:3000.
-2. Choose a target language and drag-and-drop a PDF (≤100 MB / 600 pages).
-3. Watch the progress feed update for each pipeline stage.
-4. When complete, download:
-   - `book.epub` — the translated book, ready for Kindle Send-to-Device.
-   - `flashcards.csv` — vocabulary pairs for spaced repetition apps.
+- Client uploads require a working Blob token.
+- Workflow webhook callbacks do not work against bare localhost unless you expose the app through a tunnel and configure `VERCEL_BLOB_CALLBACK_URL`.
+- The build currently succeeds on Next 14 with the Workflow integration, but the Workflow plugin emits a harmless config warning about `turbopack`.
 
-If you trigger jobs directly via API, POST to `/api/jobs` with multipart form fields `file` and `tgt_lang`, then poll `/api/jobs/{id}` and download artifacts from `/api/jobs/{id}/download?file_type=epub|flashcards`.
+## Verification
 
-### Tips for Kindle & Flashcards
-- Send the `.epub` to Kindle via the Kindle app’s “Send to Kindle,” email-to-Kindle, or USB transfer; the file is optimized for current-generation devices.
-- Import `flashcards.csv` into Anki (or similar) using “Field 1 → Front / Field 2 → Back.” Enable spaced repetition for best retention.
-- If translation quality matters most, set `TRANSLATOR_PROVIDER=openai` with an API key; for a free demo keep `hf` to use the Hugging Face pipeline.
+Run the basic checks:
 
-## Make Targets
-
-- `make up` — build and run the dockerized backend (plus MinIO).
-- `make down` — stop containers.
-- `make logs` — tail backend logs.
-- `make sh.backend` — open a shell inside the backend container.
-
-## Repository Layout
-
+```bash
+npm run test
+npm run build
 ```
-backend/             # FastAPI app, pipeline modules, providers
-data/                # Uploads, artifacts, sqlite db, manifests
-infra/               # docker-compose.yml and infra tooling
-objectdata/          # MinIO data (optional)
+
+## Deployment
+
+Deploy the repo root as one Vercel project.
+
+Provision and connect:
+
+1. A private Vercel Blob store.
+2. A Marketplace Postgres integration.
+3. Vercel Queues + Workflow on the target account.
+
+Set the same environment variables in Vercel, then verify:
+
+```bash
+https://<your-domain>/api/healthz
 ```
+
+## Implementation Notes
+
+- `POST /api/jobs` validates file type, file size, blob path, and target language before inserting a job.
+- Page-count, encrypted-PDF, and image-only checks run inside the `parse_pdf` workflow stage so job creation stays fast and does not re-read the uploaded PDF twice.
+- The legacy `backend/` and `frontend/` directories are no longer part of the runtime path.
