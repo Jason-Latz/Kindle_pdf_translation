@@ -128,29 +128,29 @@ export async function getJobRecord(jobId: string): Promise<JobRow | null> {
 export async function updateJobRecord(jobId: string, patch: JobUpdate): Promise<JobRow | null> {
   await ensureJobsTable()
   const sql = getSql()
-  const current = await getJobRecord(jobId)
-  if (!current) {
-    return null
-  }
-
+  // Workflow progress updates are on the hot path, so keep them to one round-trip.
   const [row] = await sql<Record<string, unknown>[]>`
     update jobs
     set
-      status = ${patch.status !== undefined ? patch.status : current.status},
-      stage = ${patch.stage !== undefined ? patch.stage : current.stage},
-      pct = ${patch.pct !== undefined ? patch.pct : current.pct},
-      error = ${patch.error !== undefined ? patch.error : current.error},
-      workflow_run_id = ${
-        patch.workflowRunId !== undefined ? patch.workflowRunId : current.workflow_run_id
-      },
-      epub_blob_path = ${
-        patch.epubBlobPath !== undefined ? patch.epubBlobPath : current.epub_blob_path
-      },
-      flashcards_blob_path = ${
-        patch.flashcardsBlobPath !== undefined
-          ? patch.flashcardsBlobPath
-          : current.flashcards_blob_path
-      },
+      status = case when ${patch.status !== undefined} then ${patch.status ?? null} else status end,
+      stage = case when ${patch.stage !== undefined} then ${patch.stage ?? null} else stage end,
+      pct = case when ${patch.pct !== undefined} then ${patch.pct ?? null} else pct end,
+      error = case when ${patch.error !== undefined} then ${patch.error ?? null} else error end,
+      workflow_run_id = case
+        when ${patch.workflowRunId !== undefined}
+          then ${patch.workflowRunId ?? null}
+        else workflow_run_id
+      end,
+      epub_blob_path = case
+        when ${patch.epubBlobPath !== undefined}
+          then ${patch.epubBlobPath ?? null}
+        else epub_blob_path
+      end,
+      flashcards_blob_path = case
+        when ${patch.flashcardsBlobPath !== undefined}
+          then ${patch.flashcardsBlobPath ?? null}
+        else flashcards_blob_path
+      end,
       updated_at = now()
     where id = ${jobId}
     returning *
