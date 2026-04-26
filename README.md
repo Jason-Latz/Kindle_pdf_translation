@@ -93,4 +93,5 @@ https://<your-domain>/api/healthz
 
 - `POST /api/jobs` validates file type, file size, blob path, and target language before inserting a job.
 - Page-count, encrypted-PDF, and image-only checks run inside the `parse_pdf` workflow stage so job creation stays fast and does not re-read the uploaded PDF twice.
+- Workflow stage progress updates intentionally use a single `UPDATE ... RETURNING` write in `lib/jobs.ts`; avoid reintroducing a read-before-write query on that hot path.
 - The legacy `backend/` and `frontend/` directories are no longer part of the runtime path.

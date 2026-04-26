@@ -31,6 +31,7 @@
 ## 6. Coverage and Quality Targets
 - **Coverage:** Grow Vitest coverage around `lib/` and route handlers as the migration stabilizes.
 - **Performance:** `POST /api/jobs` should stay fast because queue publication is the only long-running work in the request path.
+- **Performance:** workflow progress/status patches should stay single-write at the database layer so stage updates do not add an avoidable read-before-write round-trip.
 - **Reliability:** Tests cover invalid upload metadata, encrypted/image-only PDFs, and duplicate queue delivery.
 - **Contract stability:** polling and download responses stay backward-compatible with the previous UI contract.
 
