@@ -12,22 +12,42 @@ const STOPWORD_MAP: Record<string, string[]> = {
   pt: stopword.por,
 }
 
+type LanguageTools = {
+  segmenter: Intl.Segmenter
+  stopwords: ReadonlySet<string>
+}
+
+const languageToolsCache = new Map<string, LanguageTools>()
+
 function csvEscape(value: string): string {
   return `"${value.replace(/"/g, '""')}"`
 }
 
-function extractWords(text: string, lang: string): string[] {
-  const segmenter = new Intl.Segmenter(lang, { granularity: 'word' })
-  const stopwords = new Set(STOPWORD_MAP[lang] ?? stopword.eng)
+function getLanguageTools(language: string): LanguageTools {
+  const normalizedLanguage = language.toLowerCase()
+  const cached = languageToolsCache.get(normalizedLanguage)
+  if (cached) {
+    return cached
+  }
+
+  const tools: LanguageTools = {
+    segmenter: new Intl.Segmenter(normalizedLanguage, { granularity: 'word' }),
+    stopwords: new Set(STOPWORD_MAP[normalizedLanguage] ?? stopword.eng),
+  }
+  languageToolsCache.set(normalizedLanguage, tools)
+  return tools
+}
+
+function extractWords(text: string, tools: LanguageTools): string[] {
   const words: string[] = []
 
-  for (const segment of segmenter.segment(text)) {
+  for (const segment of tools.segmenter.segment(text)) {
     if (!segment.isWordLike) {
       continue
     }
 
     const word = segment.segment.toLowerCase().trim()
-    if (word.length < 3 || /\d/.test(word) || stopwords.has(word)) {
+    if (word.length < 3 || /\d/.test(word) || tools.stopwords.has(word)) {
       continue
     }
 
@@ -44,9 +64,12 @@ export async function buildFlashcardsCsv(
 ): Promise<string> {
   const counts = new Map<string, number>()
   const config = getConfig()
+  // Flashcard generation can scan thousands of paragraphs from one book. Reuse
+  // the per-language tokenizer state so the hot path stays focused on the text.
+  const languageTools = getLanguageTools(language)
 
   for (const paragraph of paragraphs) {
-    for (const word of extractWords(paragraph, language)) {
+    for (const word of extractWords(paragraph, languageTools)) {
       counts.set(word, (counts.get(word) ?? 0) + 1)
     }
   }
