@@ -8,14 +8,14 @@
 ## 2. Requirements Coverage Matrix
 | Requirement | Tests | Level |
 | Upload metadata validation | `tests/validation.test.ts` | Unit |
-| Flashcard CSV generation | `tests/flashcards.test.ts` | Unit |
+| Flashcard CSV generation and tokenizer reuse | `tests/flashcards.test.ts` | Unit |
 | PDF extraction cleanup and limits | `lib/pdf.ts` targeted unit tests | Unit |
 | Queue consumer idempotence | route/service tests with mocked `workflow/api` | Unit |
 | Job routes preserve polling/download contract | Next route tests with mocked Blob/Postgres | Integration |
 | Queue → workflow → artifact flow | end-to-end smoke on Vercel or local tunnel setup | E2E |
 
 ## 3. Test Levels and Strategy
-- **Unit tests:** validation, token/term selection helpers, provider adapters, and PDF cleanup logic.
+- **Unit tests:** validation, token/term selection helpers, tokenizer reuse, provider adapters, and PDF cleanup logic.
 - **Integration tests:** route handlers with mocked Blob, Queue, Workflow, and Postgres dependencies.
 - **System checks (manual):** one client upload to Blob, one queued job, one successful workflow completion, and both downloads.
 
@@ -30,7 +30,7 @@
 
 ## 6. Coverage and Quality Targets
 - **Coverage:** Grow Vitest coverage around `lib/` and route handlers as the migration stabilizes.
-- **Performance:** `POST /api/jobs` should stay fast because queue publication is the only long-running work in the request path.
+- **Performance:** `POST /api/jobs` should stay fast because queue publication is the only long-running work in the request path, and flashcard generation should reuse per-language tokenization helpers instead of reallocating them for every paragraph in large books.
 - **Reliability:** Tests cover invalid upload metadata, encrypted/image-only PDFs, and duplicate queue delivery.
 - **Contract stability:** polling and download responses stay backward-compatible with the previous UI contract.
 
