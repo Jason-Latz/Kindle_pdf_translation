@@ -15,3 +15,5 @@ __pycache__/
 *.pyc
 *.log
 .coverage
+.vercel
+.env*.local

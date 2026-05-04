@@ -19,3 +19,4 @@ Do not leave that learning only in chat history.
 - Keep a single canonical primary branch named `main`. If a legacy branch such as `mvp` has effectively become the default branch, rename or realign branches promptly so there is no ambiguity about which branch is authoritative.
 - When coding from a written plan, always locate and refer to the current plan file first, and update that plan file whenever implementation changes the agreed approach, scope, sequencing, or key decisions.
 - When Jason asks to publish completed work, push directly to `main` unless he explicitly asks for a branch or PR. Do not open a PR by default.
+- When setting scalar Vercel environment variables from the CLI, prefer `vercel env add --value ...` over piping stdin so trailing newlines are not stored in the value.
