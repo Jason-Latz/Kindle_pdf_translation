@@ -1,5 +1,3 @@
-import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs'
-
 import { getConfig } from '@/lib/config'
 import type { ExtractedBook } from '@/lib/types'
 
@@ -8,11 +6,27 @@ const FOOTER_RATIO = 0.12
 const MIN_REPEAT_RATIO = 0.6
 const MIN_REPEAT_COUNT = 2
 
+type PdfJsModule = typeof import('pdfjs-dist/legacy/build/pdf.mjs')
+
 type TextLine = {
   pageIndex: number
   y: number
   text: string
   key: string
+}
+
+let pdfJsPromise: Promise<PdfJsModule> | null = null
+
+async function loadPdfJs(): Promise<PdfJsModule> {
+  if (!pdfJsPromise) {
+    pdfJsPromise = import('pdfjs-dist/legacy/build/pdf.mjs')
+  }
+
+  return pdfJsPromise
+}
+
+function toPlainUint8Array(bytes: Uint8Array): Uint8Array {
+  return bytes.constructor === Uint8Array ? bytes : new Uint8Array(bytes)
 }
 
 function normalizeKey(text: string): string {
@@ -84,10 +98,12 @@ function linesToParagraphs(lines: TextLine[]): string[] {
 
 export async function extractBookFromPdf(pdfBytes: Uint8Array, filename: string): Promise<ExtractedBook> {
   const config = getConfig()
+  const { getDocument } = await loadPdfJs()
+  const pdfData = toPlainUint8Array(pdfBytes)
 
-  if (pdfBytes.byteLength > config.maxPdfBytes) {
+  if (pdfData.byteLength > config.maxPdfBytes) {
     throw new Error(
-      `PDF size ${(pdfBytes.byteLength / (1024 * 1024)).toFixed(1)} MB exceeds ${(
+      `PDF size ${(pdfData.byteLength / (1024 * 1024)).toFixed(1)} MB exceeds ${(
         config.maxPdfBytes /
         (1024 * 1024)
       ).toFixed(0)} MB limit`,
@@ -98,17 +114,18 @@ export async function extractBookFromPdf(pdfBytes: Uint8Array, filename: string)
 
   try {
     const loadingTask = getDocument({
-      data: pdfBytes,
+      data: pdfData,
       useWorkerFetch: false,
       isEvalSupported: false,
     })
     document = await loadingTask.promise
   } catch (error) {
-    const message = error instanceof Error ? error.message.toLowerCase() : ''
-    if (message.includes('password') || message.includes('encrypt')) {
+    const rawMessage = error instanceof Error ? error.message : ''
+    const normalizedMessage = rawMessage.toLowerCase()
+    if (normalizedMessage.includes('password') || normalizedMessage.includes('encrypt')) {
       throw new Error('Encrypted PDFs are not supported')
     }
-    throw new Error('Unable to open PDF for parsing')
+    throw new Error(`Unable to open PDF for parsing${rawMessage ? `: ${rawMessage}` : ''}`)
   }
 
   const pageCount = document.numPages
