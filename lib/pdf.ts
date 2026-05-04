@@ -7,6 +7,12 @@ const MIN_REPEAT_RATIO = 0.6
 const MIN_REPEAT_COUNT = 2
 
 type PdfJsModule = typeof import('pdfjs-dist/legacy/build/pdf.mjs')
+type PdfWorkerModule = typeof import('pdfjs-dist/legacy/build/pdf.worker.mjs')
+type PdfWorkerGlobal = typeof globalThis & {
+  pdfjsWorker?: {
+    WorkerMessageHandler: PdfWorkerModule['WorkerMessageHandler']
+  }
+}
 
 type TextLine = {
   pageIndex: number
@@ -19,7 +25,19 @@ let pdfJsPromise: Promise<PdfJsModule> | null = null
 
 async function loadPdfJs(): Promise<PdfJsModule> {
   if (!pdfJsPromise) {
-    pdfJsPromise = import('pdfjs-dist/legacy/build/pdf.mjs')
+    pdfJsPromise = (async () => {
+      const [pdfjs, pdfWorker] = await Promise.all([
+        import('pdfjs-dist/legacy/build/pdf.mjs'),
+        import('pdfjs-dist/legacy/build/pdf.worker.mjs'),
+      ])
+
+      const globals = globalThis as PdfWorkerGlobal
+      globals.pdfjsWorker ??= {
+        WorkerMessageHandler: pdfWorker.WorkerMessageHandler,
+      }
+
+      return pdfjs
+    })()
   }
 
   return pdfJsPromise
