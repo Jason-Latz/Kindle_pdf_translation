@@ -93,4 +93,5 @@ https://<your-domain>/api/healthz
 
 - `POST /api/jobs` validates file type, file size, blob path, and target language before inserting a job.
 - Page-count, encrypted-PDF, and image-only checks run inside the `parse_pdf` workflow stage so job creation stays fast and does not re-read the uploaded PDF twice.
+- The home page pauses `/api/jobs/:id` polling while the tab is hidden, then refreshes once immediately when the page becomes visible again. See [docs/job-status-polling.md](docs/job-status-polling.md).
 - The legacy `backend/` and `frontend/` directories are no longer part of the runtime path.
