@@ -44,7 +44,12 @@ async function loadPdfJs(): Promise<PdfJsModule> {
 }
 
 function toPlainUint8Array(bytes: Uint8Array): Uint8Array {
-  return bytes.constructor === Uint8Array ? bytes : new Uint8Array(bytes)
+  if (bytes.constructor === Uint8Array) {
+    return bytes
+  }
+
+  // Keep Buffer-backed uploads zero-copy while still giving pdfjs a plain Uint8Array.
+  return new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength)
 }
 
 function normalizeKey(text: string): string {
