@@ -7,25 +7,20 @@ on:
   pull_request:
 
 jobs:
-  backend-tests:
+  verify:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up Node
+        uses: actions/setup-node@v4
         with:
-          python-version: "3.11"
+          node-version-file: .nvmrc
+          cache: npm
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt -r requirements-dev.txt
+        run: npm ci
 
-      - name: Run tests with coverage
-        run: |
-          pytest --cov=app --cov-report=term-missing --cov-fail-under=70
+      - name: Verify release build
+        run: npm run verify

@@ -2,13 +2,14 @@
 
 Turn a text-based PDF into a translated EPUB and a flashcard CSV.
 
-The app is now a single root-level Next.js project. PDFs upload directly to private Vercel Blob storage, job metadata lives in Postgres, a `jobs` queue buffers new work, and one Workflow run owns the long-running translation pipeline.
+This repository ships one root-level Next.js App Router project. PDFs upload directly to private Vercel Blob storage, job metadata lives in Postgres, the `jobs` queue buffers new work, and one Workflow run owns the long-running translation pipeline.
 
 ## Architecture
 
 - `app/`: Next.js App Router pages and API routes
 - `components/`: upload, progress, and download UI
 - `lib/`: config, Blob/Postgres helpers, validation, pipeline stages, workflow
+- `tests/`: Vitest unit coverage and PDF fixtures
 - `vercel.json`: queue trigger for `app/api/queues/jobs/route.ts`
 
 The runtime API surface is:
@@ -45,14 +46,15 @@ Optional:
 - `MAX_PDF_MB`
 - `MAX_PAGES`
 - `MAX_FLASHCARDS`
-- `QUEUE_REGION`
+- `QUEUE_REGION` (defaults to `VERCEL_REGION`, then `iad1`)
 
 ## Local Development
 
-Install and run:
+Use Node 22 locally:
 
 ```bash
-npm install
+nvm use
+npm ci
 npm run dev
 ```
 
@@ -62,15 +64,13 @@ Notes:
 
 - Client uploads require a working Blob token.
 - Workflow webhook callbacks do not work against bare localhost unless you expose the app through a tunnel and configure `VERCEL_BLOB_CALLBACK_URL`.
-- The build currently succeeds on Next 14 with the Workflow integration, but the Workflow plugin emits a harmless config warning about `turbopack`.
 
 ## Verification
 
-Run the basic checks:
+Run the release gate:
 
 ```bash
-npm run test
-npm run build
+npm run verify
 ```
 
 ## Deployment
@@ -91,6 +91,11 @@ https://<your-domain>/api/healthz
 
 ## Implementation Notes
 
-- `POST /api/jobs` validates file type, file size, blob path, and target language before inserting a job.
+- `POST /api/uploads/pdf` only grants private Blob upload tokens for validated `source/*.pdf` paths.
+- `POST /api/jobs` validates file type, file size, Blob metadata, Blob path, and target language before inserting a job.
 - Page-count, encrypted-PDF, and image-only checks run inside the `parse_pdf` workflow stage so job creation stays fast and does not re-read the uploaded PDF twice.
-- The legacy `backend/` and `frontend/` directories are no longer part of the runtime path.
+- Generated workflow routes live under `app/.well-known/workflow/` and are intentionally ignored.
+
+## Release Notes
+
+See `docs/release.md` for the release checklist, known dependency audit notes, and deployment smoke steps.

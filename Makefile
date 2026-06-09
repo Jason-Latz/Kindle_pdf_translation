@@ -1,23 +1,36 @@
-.PHONY: help up down logs sh.backend
-
-COMPOSE_FILE := infra/docker-compose.yml
-COMPOSE := docker compose -f $(COMPOSE_FILE)
+.PHONY: help install dev lint test typecheck build verify clean
 
 help:
 	@echo "Targets:"
-	@echo "  up          Build and start the backend (and MinIO)."
-	@echo "  down        Stop running containers."
-	@echo "  logs        Tail backend logs."
-	@echo "  sh.backend  Open a shell inside the backend container."
+	@echo "  install    Install dependencies with npm ci."
+	@echo "  dev        Start the local Next.js server."
+	@echo "  lint       Run ESLint."
+	@echo "  test       Run Vitest."
+	@echo "  typecheck  Run TypeScript without emitting files."
+	@echo "  build      Build the production app."
+	@echo "  verify     Run the release verification gate."
+	@echo "  clean      Remove generated build and test output."
 
-up:
-	$(COMPOSE) up --build -d
+install:
+	npm ci
 
-down:
-	$(COMPOSE) down
+dev:
+	npm run dev
 
-logs:
-	$(COMPOSE) logs -f backend
+lint:
+	npm run lint
 
-sh.backend:
-	$(COMPOSE) exec backend /bin/sh
+test:
+	npm run test
+
+typecheck:
+	npm run typecheck
+
+build:
+	npm run build
+
+verify:
+	npm run verify
+
+clean:
+	rm -rf .next coverage .turbo app/.well-known/workflow
