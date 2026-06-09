@@ -65,4 +65,24 @@ describe('parseCreateJobRequest', () => {
       }),
     ).toThrow(/exceeds/)
   })
+
+  it('rejects uploads outside the source prefix', async () => {
+    const { parseCreateJobRequest } = await loadValidationModule()
+
+    expect(() =>
+      parseCreateJobRequest({
+        sourcePathname: 'artifacts/example.pdf',
+        filename: 'example.pdf',
+        sizeBytes: 1024,
+        targetLang: 'es',
+      }),
+    ).toThrow(/path/)
+  })
+
+  it('rejects nested or unsafe source paths', async () => {
+    const { validateUploadPath } = await loadValidationModule()
+
+    expect(() => validateUploadPath('source/../example.pdf')).toThrow(/path/)
+    expect(() => validateUploadPath('source/nested/example.pdf')).toThrow(/path/)
+  })
 })

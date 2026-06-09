@@ -1,11 +1,15 @@
-import { handleCallback } from '@vercel/queue'
+import { QueueClient } from '@vercel/queue'
 
 import { startQueuedWorkflow } from '@/lib/job-service'
 import type { QueueJobCreatedMessage } from '@/lib/types'
 
 export const runtime = 'nodejs'
 
-const callback = handleCallback<QueueJobCreatedMessage>(async (message) => {
+const queue = new QueueClient({
+  region: process.env.QUEUE_REGION?.trim() || process.env.VERCEL_REGION?.trim() || 'iad1',
+})
+
+const callback = queue.handleCallback<QueueJobCreatedMessage>(async (message) => {
   if (message.type !== 'job.created') {
     throw new Error(`Unsupported queue message '${String(message.type)}'`)
   }

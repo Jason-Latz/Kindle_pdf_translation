@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto'
 
-import { send } from '@vercel/queue'
 import { start } from 'workflow/api'
 
 import { headBlob } from '@/lib/blob'
@@ -19,7 +18,20 @@ import { translateBookWorkflow } from '@/lib/workflows/translate-book'
 import { toErrorMessage } from '@/lib/utils'
 
 export async function createQueuedJob(input: CreateJobRequest): Promise<JobRow> {
-  await headBlob(input.sourcePathname)
+  const config = getConfig()
+  const sourceBlob = await headBlob(input.sourcePathname)
+
+  if (sourceBlob.contentType !== 'application/pdf') {
+    throw new Error('Uploaded file is not a PDF')
+  }
+
+  if (sourceBlob.size !== input.sizeBytes) {
+    throw new Error('Uploaded PDF size does not match request metadata')
+  }
+
+  if (sourceBlob.size > config.maxPdfBytes) {
+    throw new Error('Uploaded PDF exceeds the configured size limit')
+  }
 
   const row = await createJobRecord({
     id: randomUUID().replace(/-/g, ''),
@@ -35,7 +47,7 @@ export async function createQueuedJob(input: CreateJobRequest): Promise<JobRow> 
   }
 
   try {
-    const config = getConfig()
+    const { send } = await import('@vercel/queue')
     await send('jobs', message, {
       idempotencyKey: row.id,
       region: config.queueRegion,
@@ -62,7 +74,7 @@ export async function startQueuedWorkflow(jobId: string): Promise<JobRow | null>
     return existing
   }
 
-  const claimed = existing.workflow_run_id === '__starting__' ? existing : await markWorkflowStarting(jobId)
+  const claimed = await markWorkflowStarting(jobId)
   if (!claimed) {
     return getJobRecord(jobId)
   }

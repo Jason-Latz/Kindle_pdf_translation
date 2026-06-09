@@ -168,7 +168,13 @@ export async function markWorkflowStarting(jobId: string): Promise<JobRow | null
       workflow_run_id = '__starting__',
       updated_at = now()
     where id = ${jobId}
-      and workflow_run_id is null
+      and (
+        workflow_run_id is null
+        or (
+          workflow_run_id = '__starting__'
+          and updated_at < now() - interval '10 minutes'
+        )
+      )
     returning *
   `
 

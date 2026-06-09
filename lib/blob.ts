@@ -1,6 +1,6 @@
 import { get, head, put } from '@vercel/blob'
 
-import { getConfig, requireBlobToken } from '@/lib/config'
+import { requireBlobToken } from '@/lib/config'
 
 async function requireBlob(pathname: string) {
   const blob = await get(pathname, {
@@ -38,6 +38,5 @@ export async function putPrivateBlob(pathname: string, body: string | Buffer, co
     allowOverwrite: true,
     token: requireBlobToken(),
     contentType,
-    maximumSizeInBytes: getConfig().maxPdfBytes,
   })
 }

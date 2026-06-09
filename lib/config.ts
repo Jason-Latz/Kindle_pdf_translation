@@ -87,7 +87,7 @@ export function getConfig(): AppConfig {
     maxFlashcards: env.MAX_FLASHCARDS,
     databaseUrl: env.POSTGRES_URL ?? env.DATABASE_URL,
     blobReadWriteToken: env.BLOB_READ_WRITE_TOKEN,
-    queueRegion: env.QUEUE_REGION ?? env.VERCEL_REGION,
+    queueRegion: env.QUEUE_REGION ?? env.VERCEL_REGION ?? 'iad1',
     sourceUploadPrefix: 'source',
     artifactPrefix: 'artifacts',
   }

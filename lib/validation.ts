@@ -4,6 +4,8 @@ import { getConfig } from '@/lib/config'
 import type { CreateJobRequest } from '@/lib/types'
 import { ensurePdfFilename, normalizeLang } from '@/lib/utils'
 
+const SAFE_BLOB_SEGMENT = /^[a-zA-Z0-9._-]+$/
+
 const createJobSchema = z.object({
   sourcePathname: z.string().trim().min(1),
   filename: z.string().trim().min(1),
@@ -11,16 +13,33 @@ const createJobSchema = z.object({
   targetLang: z.string().trim().min(1),
 })
 
+function validateSourceUploadPath(pathname: string): void {
+  const config = getConfig()
+  const prefix = `${config.sourceUploadPrefix}/`
+
+  ensurePdfFilename(pathname)
+
+  if (!pathname.startsWith(prefix)) {
+    throw new Error('Uploaded PDF path is invalid')
+  }
+
+  const relativePath = pathname.slice(prefix.length)
+  if (!relativePath || relativePath.includes('/') || relativePath.includes('..')) {
+    throw new Error('Uploaded PDF path is invalid')
+  }
+
+  if (!SAFE_BLOB_SEGMENT.test(relativePath)) {
+    throw new Error('Uploaded PDF path contains unsupported characters')
+  }
+}
+
 export function parseCreateJobRequest(body: unknown): CreateJobRequest {
   const config = getConfig()
   const payload = createJobSchema.parse(body)
   const targetLang = normalizeLang(payload.targetLang)
 
   ensurePdfFilename(payload.filename)
-
-  if (!payload.sourcePathname.startsWith(`${config.sourceUploadPrefix}/`)) {
-    throw new Error('Uploaded PDF path is invalid')
-  }
+  validateSourceUploadPath(payload.sourcePathname)
 
   if (payload.sizeBytes > config.maxPdfBytes) {
     throw new Error(
@@ -44,5 +63,5 @@ export function parseCreateJobRequest(body: unknown): CreateJobRequest {
 }
 
 export function validateUploadPath(pathname: string): void {
-  ensurePdfFilename(pathname)
+  validateSourceUploadPath(pathname)
 }
