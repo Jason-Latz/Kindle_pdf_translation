@@ -13,7 +13,7 @@ describe('extractBookFromPdf', () => {
     vi.resetModules()
     const { extractBookFromPdf } = await import('../lib/pdf')
     const pdfBytes = await readFile(
-      new URL('../Elevator_Pitch.pdf', import.meta.url),
+      new URL('./fixtures/elevator-pitch.pdf', import.meta.url),
     )
 
     const book = await extractBookFromPdf(pdfBytes, 'Elevator_Pitch.pdf')
