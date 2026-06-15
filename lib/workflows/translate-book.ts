@@ -58,13 +58,10 @@ async function parsePdfStep(jobId: string) {
 async function translateStep(jobId: string, paragraphs: string[]) {
   'use step'
 
-  const [{ getJobRecord }, { putPrivateBlob }, { getTranslationProvider }, { buildJobArtifactPath }] =
-    await Promise.all([
-      import('@/lib/jobs'),
-      import('@/lib/blob'),
-      import('@/lib/providers'),
-      import('@/lib/utils'),
-    ])
+  const [{ getJobRecord }, { getTranslationProvider }] = await Promise.all([
+    import('@/lib/jobs'),
+    import('@/lib/providers'),
+  ])
 
   const job = await getJobRecord(jobId)
   if (!job) {
@@ -77,28 +74,18 @@ async function translateStep(jobId: string, paragraphs: string[]) {
     tgtLang: job.target_lang,
   })
 
-  const translationsPath = buildJobArtifactPath(job.id, 'translations.json')
-  await putPrivateBlob(
-    translationsPath,
-    JSON.stringify(
-      {
-        paragraphs: translations,
-      },
-      null,
-      2,
-    ),
-    'application/json',
-  )
-
+  // Translated paragraphs feed both the epub and flashcards steps; hand
+  // them over as the durable step return value instead of writing
+  // translations.json to Blob (one fewer advanced op, two fewer reads).
   return {
-    translationsPath,
+    translations,
   }
 }
 
-async function buildEpubStep(jobId: string, translationsPath: string, title: string, author: string) {
+async function buildEpubStep(jobId: string, translations: string[], title: string, author: string) {
   'use step'
 
-  const [{ getJobRecord }, { readPrivateBlob, putPrivateBlob }, { buildEpubBuffer }, { buildJobArtifactPath }] =
+  const [{ getJobRecord }, { putPrivateBlob }, { buildEpubBuffer }, { buildJobArtifactPath }] =
     await Promise.all([
       import('@/lib/jobs'),
       import('@/lib/blob'),
@@ -111,10 +98,7 @@ async function buildEpubStep(jobId: string, translationsPath: string, title: str
     throw new Error(`Job '${jobId}' was not found`)
   }
 
-  const source = JSON.parse((await readPrivateBlob(translationsPath)).toString('utf-8')) as {
-    paragraphs: string[]
-  }
-  const epubBuffer = await buildEpubBuffer(source.paragraphs, {
+  const epubBuffer = await buildEpubBuffer(translations, {
     title,
     author,
     language: job.target_lang,
@@ -128,10 +112,10 @@ async function buildEpubStep(jobId: string, translationsPath: string, title: str
   }
 }
 
-async function buildFlashcardsStep(jobId: string, translationsPath: string) {
+async function buildFlashcardsStep(jobId: string, translations: string[]) {
   'use step'
 
-  const [{ getJobRecord }, { readPrivateBlob, putPrivateBlob }, { getTranslationProvider }, { buildFlashcardsCsv }, { buildJobArtifactPath }] =
+  const [{ getJobRecord }, { putPrivateBlob }, { getTranslationProvider }, { buildFlashcardsCsv }, { buildJobArtifactPath }] =
     await Promise.all([
       import('@/lib/jobs'),
       import('@/lib/blob'),
@@ -145,11 +129,8 @@ async function buildFlashcardsStep(jobId: string, translationsPath: string) {
     throw new Error(`Job '${jobId}' was not found`)
   }
 
-  const source = JSON.parse((await readPrivateBlob(translationsPath)).toString('utf-8')) as {
-    paragraphs: string[]
-  }
   const provider = getTranslationProvider()
-  const csv = await buildFlashcardsCsv(source.paragraphs, job.target_lang, provider)
+  const csv = await buildFlashcardsCsv(translations, job.target_lang, provider)
 
   const flashcardsPath = buildJobArtifactPath(job.id, `${job.filename.replace(/\.pdf$/i, '')}.csv`)
   await putPrivateBlob(flashcardsPath, csv, 'text/csv')
@@ -185,7 +166,7 @@ export async function translateBookWorkflow(jobId: string) {
       pct: 75,
       error: null,
     })
-    const epub = await buildEpubStep(jobId, translated.translationsPath, parsed.title, parsed.author)
+    const epub = await buildEpubStep(jobId, translated.translations, parsed.title, parsed.author)
 
     await updateJobRecordStep(jobId, {
       status: 'processing',
@@ -193,7 +174,7 @@ export async function translateBookWorkflow(jobId: string) {
       pct: 90,
       error: null,
     })
-    const flashcards = await buildFlashcardsStep(jobId, translated.translationsPath)
+    const flashcards = await buildFlashcardsStep(jobId, translated.translations)
 
     await updateJobRecordStep(jobId, {
       status: 'processing',
