@@ -30,13 +30,11 @@ async function updateJobRecordStep(
 async function parsePdfStep(jobId: string) {
   'use step'
 
-  const [{ getJobRecord }, { readPrivateBlob, putPrivateBlob }, { extractBookFromPdf }, { buildJobArtifactPath }] =
-    await Promise.all([
-      import('@/lib/jobs'),
-      import('@/lib/blob'),
-      import('@/lib/pdf'),
-      import('@/lib/utils'),
-    ])
+  const [{ getJobRecord }, { readPrivateBlob }, { extractBookFromPdf }] = await Promise.all([
+    import('@/lib/jobs'),
+    import('@/lib/blob'),
+    import('@/lib/pdf'),
+  ])
 
   const job = await getJobRecord(jobId)
   if (!job) {
@@ -45,32 +43,22 @@ async function parsePdfStep(jobId: string) {
 
   const pdfBytes = await readPrivateBlob(job.source_blob_path)
   const extracted = await extractBookFromPdf(pdfBytes, job.filename)
-  const paragraphsPath = buildJobArtifactPath(job.id, 'paragraphs.json')
 
-  await putPrivateBlob(
-    paragraphsPath,
-    JSON.stringify(
-      {
-        paragraphs: extracted.paragraphs,
-      },
-      null,
-      2,
-    ),
-    'application/json',
-  )
-
+  // Extracted paragraphs ride to the translate step as the durable step
+  // return value (journaled by the Workflow runtime) rather than a Blob
+  // round-trip — same crash/resume guarantee, one fewer advanced Blob op.
   return {
-    paragraphsPath,
+    paragraphs: extracted.paragraphs,
     title: extracted.title,
     author: extracted.author,
     pageCount: extracted.pageCount,
   }
 }
 
-async function translateStep(jobId: string, paragraphsPath: string) {
+async function translateStep(jobId: string, paragraphs: string[]) {
   'use step'
 
-  const [{ getJobRecord }, { readPrivateBlob, putPrivateBlob }, { getTranslationProvider }, { buildJobArtifactPath }] =
+  const [{ getJobRecord }, { putPrivateBlob }, { getTranslationProvider }, { buildJobArtifactPath }] =
     await Promise.all([
       import('@/lib/jobs'),
       import('@/lib/blob'),
@@ -83,12 +71,8 @@ async function translateStep(jobId: string, paragraphsPath: string) {
     throw new Error(`Job '${jobId}' was not found`)
   }
 
-  const source = JSON.parse((await readPrivateBlob(paragraphsPath)).toString('utf-8')) as {
-    paragraphs: string[]
-  }
-
   const provider = getTranslationProvider()
-  const translations = await provider.translateBatch(source.paragraphs, {
+  const translations = await provider.translateBatch(paragraphs, {
     srcLang: 'auto',
     tgtLang: job.target_lang,
   })
@@ -193,7 +177,7 @@ export async function translateBookWorkflow(jobId: string) {
       pct: 35,
       error: null,
     })
-    const translated = await translateStep(jobId, parsed.paragraphsPath)
+    const translated = await translateStep(jobId, parsed.paragraphs)
 
     await updateJobRecordStep(jobId, {
       status: 'processing',
