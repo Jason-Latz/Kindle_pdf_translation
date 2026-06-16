@@ -2,9 +2,24 @@
 
 import type { JobStatus } from '@/components/ProgressFeed'
 
-export function DownloadCard({ status }: { status: JobStatus | null }) {
+export function DownloadCard({
+  status,
+  downloadToken,
+}: {
+  status: JobStatus | null
+  downloadToken: string | null
+}) {
   const isReady = status?.status === 'done'
   const jobId = status?.job_id
+  const canDownload = isReady && Boolean(jobId) && Boolean(downloadToken)
+
+  function downloadHref(fileType: 'epub' | 'flashcards'): string {
+    if (!jobId || !downloadToken) {
+      return '#'
+    }
+    const params = new URLSearchParams({ file_type: fileType, token: downloadToken })
+    return `/api/jobs/${jobId}/download?${params.toString()}`
+  }
 
   return (
     <div className="rounded-2xl border border-slate-800/80 bg-slate-900/60 p-6">
@@ -29,13 +44,13 @@ export function DownloadCard({ status }: { status: JobStatus | null }) {
       <div className="grid gap-3 sm:grid-cols-2">
         <DownloadButton
           label="Download EPUB"
-          href={jobId ? `/api/jobs/${jobId}/download?file_type=epub` : '#'}
-          ready={isReady}
+          href={downloadHref('epub')}
+          ready={canDownload}
         />
         <DownloadButton
           label="Download Flashcards"
-          href={jobId ? `/api/jobs/${jobId}/download?file_type=flashcards` : '#'}
-          ready={isReady}
+          href={downloadHref('flashcards')}
+          ready={canDownload}
         />
       </div>
       {!isReady ? (

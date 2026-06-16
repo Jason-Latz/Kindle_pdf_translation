@@ -14,6 +14,7 @@ type JobInsert = {
   sourceBlobPath: string
   targetLang: string
   provider: TranslationProviderId
+  downloadToken: string
 }
 
 type JobUpdate = {
@@ -55,6 +56,7 @@ function rowFromRecord(record: Record<string, unknown>): JobRow {
     epub_blob_path: record.epub_blob_path === null ? null : String(record.epub_blob_path),
     flashcards_blob_path:
       record.flashcards_blob_path === null ? null : String(record.flashcards_blob_path),
+    download_token: record.download_token == null ? null : String(record.download_token),
     created_at: new Date(String(record.created_at)),
     updated_at: new Date(String(record.updated_at)),
   }
@@ -63,24 +65,29 @@ function rowFromRecord(record: Record<string, unknown>): JobRow {
 export async function ensureJobsTable(): Promise<void> {
   if (!schemaPromise) {
     const sql = getSql()
-    schemaPromise = sql`
-      create table if not exists jobs (
-        id text primary key,
-        filename text not null,
-        source_blob_path text not null,
-        target_lang text not null,
-        provider text not null,
-        status text not null,
-        stage text not null,
-        pct double precision not null default 0,
-        error text,
-        workflow_run_id text,
-        epub_blob_path text,
-        flashcards_blob_path text,
-        created_at timestamptz not null default now(),
-        updated_at timestamptz not null default now()
-      )
-    `.then(() => undefined)
+    schemaPromise = (async () => {
+      await sql`
+        create table if not exists jobs (
+          id text primary key,
+          filename text not null,
+          source_blob_path text not null,
+          target_lang text not null,
+          provider text not null,
+          status text not null,
+          stage text not null,
+          pct double precision not null default 0,
+          error text,
+          workflow_run_id text,
+          epub_blob_path text,
+          flashcards_blob_path text,
+          download_token text,
+          created_at timestamptz not null default now(),
+          updated_at timestamptz not null default now()
+        )
+      `
+      // Backfill on databases created before per-job download tokens existed.
+      await sql`alter table jobs add column if not exists download_token text`
+    })()
   }
 
   return schemaPromise
@@ -98,7 +105,8 @@ export async function createJobRecord(input: JobInsert): Promise<JobRow> {
       provider,
       status,
       stage,
-      pct
+      pct,
+      download_token
     ) values (
       ${input.id},
       ${input.filename},
@@ -107,7 +115,8 @@ export async function createJobRecord(input: JobInsert): Promise<JobRow> {
       ${input.provider},
       'queued',
       'queued',
-      0
+      0,
+      ${input.downloadToken}
     )
     returning *
   `

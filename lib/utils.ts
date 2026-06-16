@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 
 import { getConfig } from '@/lib/config'
 
@@ -50,4 +50,37 @@ export function toErrorMessage(error: unknown, fallback = 'Unexpected error'): s
   }
 
   return fallback
+}
+
+// Per-job download capability: a 256-bit random token issued at creation and
+// required (constant-time compared) by the artifact download route.
+export function generateDownloadToken(): string {
+  return randomBytes(32).toString('hex')
+}
+
+export function safeTokenEqual(provided: string, expected: string): boolean {
+  const providedBuffer = Buffer.from(provided)
+  const expectedBuffer = Buffer.from(expected)
+  if (providedBuffer.length !== expectedBuffer.length) {
+    return false
+  }
+  return timingSafeEqual(providedBuffer, expectedBuffer)
+}
+
+// Char codes stripped from a Content-Disposition filename so a crafted value
+// cannot break out of the quoted-string / inject response headers:
+//   < 0x20  control chars, incl. CR (0x0d) / LF (0x0a) response-splitting
+//   0x22    double-quote   0x5c  backslash (quoted-string escape)   0x7f  DEL
+// Spaces and unicode are preserved for a readable download name.
+export function sanitizeDownloadFilename(name: string, fallback: string): string {
+  let cleaned = ''
+  for (const char of name) {
+    const code = char.codePointAt(0) ?? 0
+    if (code < 0x20 || code === 0x22 || code === 0x5c || code === 0x7f) {
+      continue
+    }
+    cleaned += char
+  }
+  cleaned = cleaned.trim().slice(0, 200)
+  return cleaned || fallback
 }

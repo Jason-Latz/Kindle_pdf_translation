@@ -13,6 +13,7 @@ type JobRecord = {
   workflow_run_id: string | null
   epub_blob_path: string | null
   flashcards_blob_path: string | null
+  download_token: string | null
   created_at: Date
   updated_at: Date
 }
@@ -34,6 +35,10 @@ function sqlStub(strings: TemplateStringsArray, ...values: unknown[]) {
     return Promise.resolve([])
   }
 
+  if (query.startsWith('alter table jobs add column')) {
+    return Promise.resolve([])
+  }
+
   if (query.startsWith('insert into jobs')) {
     const now = new Date('2026-01-01T00:00:00.000Z')
     const row: JobRecord = {
@@ -49,6 +54,7 @@ function sqlStub(strings: TemplateStringsArray, ...values: unknown[]) {
       workflow_run_id: null,
       epub_blob_path: null,
       flashcards_blob_path: null,
+      download_token: String(values[5]),
       created_at: now,
       updated_at: now,
     }
@@ -135,6 +141,7 @@ describe('updateJobRecord', () => {
       sourceBlobPath: 'source/sample.pdf',
       targetLang: 'es',
       provider: 'openai',
+      downloadToken: 'token_job_1',
     })
 
     state.queries = []
@@ -162,6 +169,7 @@ describe('updateJobRecord', () => {
       sourceBlobPath: 'source/sample.pdf',
       targetLang: 'fr',
       provider: 'hf',
+      downloadToken: 'token_job_2',
     })
 
     await updateJobRecord('job_2', {

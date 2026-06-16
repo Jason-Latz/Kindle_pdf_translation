@@ -20,6 +20,7 @@ export default function HomePage() {
   const [selectedLang, setSelectedLang] = useState('es')
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null)
+  const [downloadToken, setDownloadToken] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -123,8 +124,9 @@ export default function HomePage() {
         throw new Error(payload?.detail ?? 'Unable to start translation. Please try again.')
       }
 
-      const payload = (await response.json()) as JobStatus
+      const payload = (await response.json()) as JobStatus & { download_token?: string }
       setJobStatus(payload)
+      setDownloadToken(payload.download_token ?? null)
     } catch (submitError) {
       console.error(submitError)
       setError(
@@ -202,7 +204,7 @@ export default function HomePage() {
 
       <section className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
         <ProgressFeed status={jobStatus} />
-        <DownloadCard status={jobStatus} />
+        <DownloadCard status={jobStatus} downloadToken={downloadToken} />
       </section>
     </main>
   )

@@ -15,7 +15,7 @@ import {
 } from '@/lib/jobs'
 import type { CreateJobRequest, JobRow, QueueJobCreatedMessage } from '@/lib/types'
 import { translateBookWorkflow } from '@/lib/workflows/translate-book'
-import { toErrorMessage } from '@/lib/utils'
+import { generateDownloadToken, toErrorMessage } from '@/lib/utils'
 
 export async function createQueuedJob(input: CreateJobRequest): Promise<JobRow> {
   const config = getConfig()
@@ -39,6 +39,7 @@ export async function createQueuedJob(input: CreateJobRequest): Promise<JobRow> 
     sourceBlobPath: input.sourcePathname,
     targetLang: input.targetLang,
     provider: getConfiguredProvider(),
+    downloadToken: generateDownloadToken(),
   })
 
   const message: QueueJobCreatedMessage = {
