@@ -7,10 +7,10 @@ import { ensurePdfFilename, normalizeLang } from '@/lib/utils'
 const SAFE_BLOB_SEGMENT = /^[a-zA-Z0-9._-]+$/
 
 const createJobSchema = z.object({
-  sourcePathname: z.string().trim().min(1),
-  filename: z.string().trim().min(1),
+  sourcePathname: z.string().trim().min(1).max(1024),
+  filename: z.string().trim().min(1).max(255),
   sizeBytes: z.coerce.number().int().positive(),
-  targetLang: z.string().trim().min(1),
+  targetLang: z.string().trim().min(1).max(32),
 })
 
 function validateSourceUploadPath(pathname: string): void {

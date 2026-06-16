@@ -14,6 +14,7 @@ const envSchema = z.object({
   MAX_PDF_MB: z.coerce.number().int().positive().default(100),
   MAX_PAGES: z.coerce.number().int().positive().default(600),
   MAX_FLASHCARDS: z.coerce.number().int().positive().default(30),
+  MAX_TRANSLATION_BATCHES: z.coerce.number().int().positive().default(150),
   POSTGRES_URL: z.string().trim().min(1).optional(),
   DATABASE_URL: z.string().trim().min(1).optional(),
   BLOB_READ_WRITE_TOKEN: z.string().trim().min(1).optional(),
@@ -33,6 +34,7 @@ export type AppConfig = {
   maxPdfBytes: number
   maxPages: number
   maxFlashcards: number
+  maxTranslationBatches: number
   databaseUrl?: string
   blobReadWriteToken?: string
   queueRegion?: string
@@ -85,6 +87,7 @@ export function getConfig(): AppConfig {
     maxPdfBytes: env.MAX_PDF_MB * 1024 * 1024,
     maxPages: env.MAX_PAGES,
     maxFlashcards: env.MAX_FLASHCARDS,
+    maxTranslationBatches: env.MAX_TRANSLATION_BATCHES,
     databaseUrl: env.POSTGRES_URL ?? env.DATABASE_URL,
     blobReadWriteToken: env.BLOB_READ_WRITE_TOKEN,
     queueRegion: env.QUEUE_REGION ?? env.VERCEL_REGION ?? 'iad1',

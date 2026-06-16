@@ -20,7 +20,20 @@ type LanguageTools = {
 const languageToolsCache = new Map<string, LanguageTools>()
 
 function csvEscape(value: string): string {
-  return `"${value.replace(/"/g, '""')}"`
+  // Neutralize CSV/spreadsheet formula injection: a value beginning with
+  // = + - @ (or a tab/CR) is evaluated as a formula by Excel/Sheets. Prefix
+  // such values with a single quote so they are treated as literal text, then
+  // apply normal CSV quote-escaping.
+  const firstCode = value.charCodeAt(0)
+  const isFormulaTrigger =
+    firstCode === 0x3d || // =
+    firstCode === 0x2b || // +
+    firstCode === 0x2d || // -
+    firstCode === 0x40 || // @
+    firstCode === 0x09 || // tab
+    firstCode === 0x0d // CR
+  const guarded = isFormulaTrigger ? `'${value}` : value
+  return `"${guarded.replace(/"/g, '""')}"`
 }
 
 function getLanguageTools(language: string): LanguageTools {

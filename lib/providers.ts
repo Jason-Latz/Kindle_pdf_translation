@@ -1,5 +1,6 @@
 import OpenAI from 'openai'
 import { getEncoding } from 'js-tiktoken'
+import { FatalError } from 'workflow'
 
 import { getConfig } from '@/lib/config'
 import type { TranslationProviderId } from '@/lib/types'
@@ -37,6 +38,21 @@ function chunkByTokens(texts: string[], maxTokens = DEFAULT_INPUT_TOKEN_BUDGET):
   return batches
 }
 
+// Bound the LLM fan-out: a single job may not exceed maxTranslationBatches
+// provider calls. Caps both cost and step duration for very large (but
+// in-page-limit) PDFs. Deterministic for a given input, so it fails the step
+// without retrying (FatalError) rather than re-billing on every retry.
+function chunkByTokensWithCap(texts: string[]): string[][] {
+  const batches = chunkByTokens(texts)
+  const { maxTranslationBatches } = getConfig()
+  if (batches.length > maxTranslationBatches) {
+    throw new FatalError(
+      `Document is too large to translate in one job: ${batches.length} batches exceed the limit of ${maxTranslationBatches}`,
+    )
+  }
+  return batches
+}
+
 function buildPrompt(paragraphs: string[], srcLang: string, tgtLang: string): string {
   return JSON.stringify(
     {
@@ -55,7 +71,7 @@ function parseTranslationPayload(raw: string, expectedCount: number, providerNam
   try {
     parsed = JSON.parse(raw)
   } catch (error) {
-    throw new Error(`${providerName} did not return valid JSON`)
+    throw new FatalError(`${providerName} did not return valid JSON`)
   }
 
   if (
@@ -68,12 +84,12 @@ function parseTranslationPayload(raw: string, expectedCount: number, providerNam
   }
 
   if (!Array.isArray(parsed)) {
-    throw new Error(`${providerName} response did not include a translations array`)
+    throw new FatalError(`${providerName} response did not include a translations array`)
   }
 
   const translations = parsed.map((value) => String(value))
   if (translations.length !== expectedCount) {
-    throw new Error(
+    throw new FatalError(
       `${providerName} returned ${translations.length} translations for ${expectedCount} inputs`,
     )
   }
@@ -100,7 +116,7 @@ function createOpenAiProvider(): TranslationProvider {
       }
 
       const output: string[] = []
-      for (const batch of chunkByTokens(texts)) {
+      for (const batch of chunkByTokensWithCap(texts)) {
         const response = await client.chat.completions.create({
           model: config.openAiModel,
           response_format: { type: 'json_object' },
@@ -162,7 +178,7 @@ function createHfProvider(): TranslationProvider {
       }
 
       const output: string[] = []
-      for (const batch of chunkByTokens(texts)) {
+      for (const batch of chunkByTokensWithCap(texts)) {
         const response = await fetch(endpoint, {
           method: 'POST',
           headers: {

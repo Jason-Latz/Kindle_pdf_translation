@@ -72,4 +72,18 @@ describe('buildFlashcardsCsv', () => {
 
     expect(segmenterCreations).toBe(1)
   })
+
+  it('neutralizes spreadsheet formula injection in csv values', async () => {
+    process.env.MAX_FLASHCARDS = '1'
+    const { buildFlashcardsCsv } = await loadFlashcardsModule()
+
+    const csv = await buildFlashcardsCsv(['hola hola hola'], 'es', {
+      id: 'openai',
+      translateBatch: async (texts) => texts.map(() => '=SUM(A1:A9)'),
+    })
+
+    // Leading '=' must be prefixed with a single quote so it is not evaluated.
+    expect(csv).toContain(`"'=SUM(A1:A9)"`)
+    expect(csv).not.toContain('"=SUM(A1:A9)"')
+  })
 })

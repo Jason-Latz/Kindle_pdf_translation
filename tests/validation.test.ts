@@ -85,4 +85,17 @@ describe('parseCreateJobRequest', () => {
     expect(() => validateUploadPath('source/../example.pdf')).toThrow(/path/)
     expect(() => validateUploadPath('source/nested/example.pdf')).toThrow(/path/)
   })
+
+  it('rejects an over-long filename to bound storage/DoS', async () => {
+    const { parseCreateJobRequest } = await loadValidationModule()
+
+    expect(() =>
+      parseCreateJobRequest({
+        sourcePathname: 'source/example.pdf',
+        filename: `${'a'.repeat(300)}.pdf`,
+        sizeBytes: 1024,
+        targetLang: 'es',
+      }),
+    ).toThrow()
+  })
 })
