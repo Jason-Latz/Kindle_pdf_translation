@@ -14,6 +14,7 @@ const STOPWORD_MAP: Record<string, string[]> = {
 
 type LanguageTools = {
   segmenter: Intl.Segmenter
+  sentenceSegmenter: Intl.Segmenter
   stopwords: ReadonlySet<string>
 }
 
@@ -45,6 +46,7 @@ function getLanguageTools(language: string): LanguageTools {
 
   const tools: LanguageTools = {
     segmenter: new Intl.Segmenter(normalizedLanguage, { granularity: 'word' }),
+    sentenceSegmenter: new Intl.Segmenter(normalizedLanguage, { granularity: 'sentence' }),
     stopwords: new Set(STOPWORD_MAP[normalizedLanguage] ?? stopword.eng),
   }
   languageToolsCache.set(normalizedLanguage, tools)
@@ -70,6 +72,51 @@ function extractWords(text: string, tools: LanguageTools): string[] {
   return words
 }
 
+function sentenceWordSet(sentence: string, tools: LanguageTools): Set<string> {
+  const words = new Set<string>()
+  for (const segment of tools.segmenter.segment(sentence)) {
+    if (segment.isWordLike) {
+      words.add(segment.segment.toLowerCase())
+    }
+  }
+  return words
+}
+
+// For each selected word, find the first source sentence that contains it so
+// each flashcard carries a usage example. Stops once every word has a context.
+function findContexts(
+  paragraphs: string[],
+  words: string[],
+  tools: LanguageTools,
+): Map<string, string> {
+  const contexts = new Map<string, string>()
+  const pending = new Set(words)
+
+  for (const paragraph of paragraphs) {
+    if (pending.size === 0) {
+      break
+    }
+    for (const { segment } of tools.sentenceSegmenter.segment(paragraph)) {
+      const sentence = segment.trim()
+      if (!sentence) {
+        continue
+      }
+      const wordsInSentence = sentenceWordSet(sentence, tools)
+      for (const word of [...pending]) {
+        if (wordsInSentence.has(word)) {
+          contexts.set(word, sentence)
+          pending.delete(word)
+        }
+      }
+      if (pending.size === 0) {
+        break
+      }
+    }
+  }
+
+  return contexts
+}
+
 export async function buildFlashcardsCsv(
   paragraphs: string[],
   language: string,
@@ -93,17 +140,25 @@ export async function buildFlashcardsCsv(
     .map(([word]) => word)
 
   if (topWords.length === 0) {
-    return 'word,translation\n'
+    return 'word,translation,context\n'
   }
 
+  const contexts = findContexts(paragraphs, topWords, languageTools)
   const translations = await provider.translateBatch(topWords, {
     srcLang: language,
     tgtLang: 'en',
   })
 
-  const rows = ['word,translation']
+  const rows = ['word,translation,context']
   for (let index = 0; index < topWords.length; index += 1) {
-    rows.push(`${csvEscape(topWords[index])},${csvEscape(translations[index])}`)
+    const word = topWords[index]
+    rows.push(
+      [
+        csvEscape(word),
+        csvEscape(translations[index] ?? ''),
+        csvEscape(contexts.get(word) ?? ''),
+      ].join(','),
+    )
   }
 
   return rows.join('\n')
