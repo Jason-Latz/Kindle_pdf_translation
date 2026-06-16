@@ -66,22 +66,20 @@ before declaring done. No time estimates. Pause only for HUMAN-GATED items (§ b
   refactor-repo-for-vercel-and-s3-deployment, cache-flashcard-tokenizers, pause-hidden-job-polling,
   single-query-job-updates} only after `origin/main` has everything). Keep `render`, `software-testing`, `backup/pre-split-1c1a2e9`.
 
-**Phase B — red-team (reproduce w/ test → fix → keep as regression guard)**
-- ☐ B1 **Unauth download-by-job-id** (headline). `download/route.ts` streams private blob by id, no
-  ownership check. Plan: download/ownership token issued at job creation, required on download,
-  NOT returned by the poll endpoint. Needs `download_token` column (alter table add column if not exists),
-  create-response carries token, client threads it into download URLs.
-- ☐ B2 Content-Disposition filename uses raw `job.filename` (only `.pdf`-suffix-validated, not sanitized)
-  → quote/`..` spoofing. Sanitize the response filename. (Blob artifact paths already safe via `sanitizeFilename`.)
-- ☐ B3 LLM trust: `parseTranslationPayload` requires exact array-length match; verify clean `error`
-  state + that queue retries don't double-start (idempotent start guards this).
-- ☐ B4 Workflow idempotency: `markWorkflowStarting` atomic `update...where` is concurrency-safe;
-  document the 10-min stale-reclaim double-run edge. Add tests around `startQueuedWorkflow` guard.
-- ☐ B5 Cost cap: `translateBatch` chunks by 5000-token budget with **no overall cap** → unbounded
-  LLM calls on a large in-limit PDF. Add a configurable paragraph/token cap with a clean error.
-- ☐ B6 Malformed/encrypted/image-only PDFs: error paths exist; add fuzz/regression tests for clean failure.
-- ☐ B7 CSV injection: `csvEscape` only doubles quotes; neutralize values starting with `= + - @` (and tab/CR).
-- ☐ B8 Upload desync: upload token restricts contentType/size; non-PDF bytes fail cleanly in parse. Low risk; confirm + test.
+**Phase B — red-team — DONE** (commits `1c34572`, `18e3298`, `7a5d7f0`; see also `docs/security.md`).
+Two background agents (Workflow-retry research + adversarial sweep) informed the fixes.
+- ☑ B1 Headline IDOR fixed: per-job 256-bit `download_token` (schema create-col + idempotent `alter`),
+  returned only in the create response, required + `timingSafeEqual`-checked on download; client threads it.
+- ☑ B2 `Content-Disposition` filename sanitized (`sanitizeDownloadFilename`, char-code based).
+- ☑ B3 Deterministic parse failures throw `FatalError` (from `workflow`) → no 3× retry / OpenAI re-bill.
+- ☑ B4 Idempotent start verified + tested (`tests/job-service.test.ts`); 10-min stale-reclaim documented.
+- ☑ B5 `MAX_TRANSLATION_BATCHES` (default 150) cap via `chunkByTokensWithCap`, fails fast before any call.
+- ☑ B6 Malformed/encrypted/image-only PDF error paths tested (`tests/pdf.test.ts`).
+- ☑ B7 CSV formula injection neutralized in `csvEscape`.
+- ☑ B8 + M3 input length bounds (filename 255 / path 1024 / lang 32); desync confirmed safe by agent.
+- **Deferred (documented, not fixed):** H1 queue-callback app-layer auth (low risk: needs secret jobId +
+  idempotent; fixing needs verified Vercel header-forwarding → could break prod delivery). M4 fully-public
+  by design. See `docs/security.md` + GO-LIVE.
 
 **Phase C — optimization & mistakes sweep**
 - ☐ C1 SSOT for target languages: client `components/TargetLangSelect.tsx` hardcodes es/fr/de/it/pt while
