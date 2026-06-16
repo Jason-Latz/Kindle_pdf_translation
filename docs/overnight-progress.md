@@ -82,30 +82,34 @@ Two background agents (Workflow-retry research + adversarial sweep) informed the
   by design. See `docs/security.md` + GO-LIVE.
 
 **Phase C — optimization & mistakes sweep**
-- ☐ C1 SSOT for target languages: client `components/TargetLangSelect.tsx` hardcodes es/fr/de/it/pt while
-  server validates `config.targetLangs` (env). Plan: server endpoint (e.g. `/api/languages`) + shared
-  `lib/languages.ts` label map; client fetches supported langs (page.tsx is `'use client'`).
-- ☐ C2 General sweep for dead code / correctness / efficiency.
+- ☑ C1 Target-language SSOT: `lib/languages.ts` + `GET /api/languages`; client fetches the list (commit `9760eda`).
+- ☑ C2 Dead-code sweep: removed unused `buildSourceBlobPath` (+ `randomUUID` import).
 
-**Phase D — product gaps**
-- ☐ D1 Chapter detection → chaptered EPUB w/ navigable TOC. `lib/pdf.ts` currently emits a flat paragraph
-  array (and discards font size); `lib/epub.ts` emits one flat chapter. Capture font height + heading
-  heuristics (size/numbering/"Chapter N"), thread chapter structure through workflow state, emit multi-chapter EPUB.
-- ☐ D2 Richer flashcards: rarity/frequency-aware selection + richer CSV (`word,translation,context_sentence`),
-  optional per-chapter top-N. Currently global top-N `word,translation` only.
-- ☐ D3 HF provider robust-or-quarantine: `createHfProvider` posts a plain prompt expecting JSON; fragile,
-  untested. Make robust + tested OR mark experimental and guard the switch.
+**Phase D — product gaps — DONE**
+- ☑ D1 Chaptered EPUB + navigable TOC (commit `2fd17e6`): font-size/keyword heading detection in `lib/pdf.ts`
+  (single-chapter fallback), chapters threaded through the workflow (flatten→translate→reassemble), `lib/epub.ts`
+  multi-chapter + auto TOC. `ExtractedBook` now `chapters: Chapter[]`; dead `TranslatedBook` removed.
+- ☑ D2 Richer flashcards (commit `c4e1263`): `word,translation,context` — per-word context sentence via cached
+  sentence segmenter; frequency-ranked content words.
+- ☑ D3 HF provider hardened + marked experimental (commit `4b5b4fe`): lenient JSON extraction, one-time warn,
+  README note; switch already guards on missing `HF_MODEL_ID`.
 
-**Phase E — tests to ship-grade** (orchestration layer has ZERO coverage today)
-- ☐ Tests for `lib/jobs.ts`, `lib/job-service.ts`, `lib/workflows/translate-book.ts`, `lib/providers.ts`
-  (OpenAI+HF parse/failure), `lib/epub.ts`, `lib/blob.ts`, API routes (incl. download-auth). Mock external services; keep offline/fast. No new eslint warnings.
+**Phase E — tests to ship-grade — DONE** (commit `b2d1cc1`; suite now **58 tests / 13 files**, offline+mocked).
+Added `translate-book` (pipeline + flatten/reassemble), `blob`, `api-routes` (healthz + jobs-POST token) on top of
+the download-route / providers / job-service / jobs / languages / epub / pdf / flashcards / validation / job-polling tests.
 
-**Phase F — verify** ☐ `npm run verify` clean; `npm audit --omit=dev` shows only the documented Next/PostCSS moderate advisory. Do NOT jump to `next@16`.
+**Phase F — verify + audit — DONE.** `npm run verify` GREEN. `npm audit --omit=dev` = 14 advisories: the documented
+Next/PostCSS moderate + a high `esbuild` (GHSA-gv7w-rqvm-qjhr) via `@workflow/*` build tooling — a build/install-time
+Deno/registry vector not run by the deployed runtime, no in-range fix; both documented in `docs/release.md` (commit `3d6c924`). Did NOT jump to `next@16`.
 
-**Phase G — deploy + smoke** ☐ Push `origin/main` (only when green) → prod. Smoke per `docs/testing.md`:
-`/api/healthz`→`{ok:true}`; upload one small text PDF; watch poll to `done`; download EPUB + CSV. Record any missing Vercel resources in GO-LIVE. One tiny PDF of OpenAI spend authorized; no large books. **After the push, prune the 5 remote codex branches** (deferred from A6).
+**Phase G — deploy + smoke — PARTIAL (blocker documented).** Pushed `origin/main` → `50b0ce9` (gate green); pruned the
+5 remote codex branches. **BUT the push did not auto-deploy** — live prod is the 2026-05-03 (43d) deployment and no
+build was triggered → GitHub→Vercel production auto-deploy is inactive. Live prod `GET /api/healthz` = `{ok:true}` (old
+code). Did NOT force a `vercel --prod` autonomously (a 43d-stale prod implies deliberate deploys). Remediation + the
+post-deploy pipeline smoke are in **GO-LIVE #1–3** (`CLAUDE.md`). Prod env vars verified set; Queues/Workflow toggles unverifiable via CLI.
 
-**Phase H — ship prep** ☐ `docs/launch/linkedin-post.md` (2–3 drafts, DO NOT POST) + finalize `CLAUDE.md` + GO-LIVE checklist.
+**Phase H — ship prep — DONE.** `docs/launch/linkedin-post.md` (3 drafts, DO NOT POST); `CLAUDE.md` (durable anchor +
+GO-LIVE) finalized; this ledger finalized; morning report generated.
 
 ## Findings / decisions / assumptions log
 
