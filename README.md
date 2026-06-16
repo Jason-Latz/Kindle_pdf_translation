@@ -95,6 +95,7 @@ https://<your-domain>/api/healthz
 - `POST /api/jobs` validates file type, file size, Blob metadata, Blob path, and target language before inserting a job.
 - Page-count, encrypted-PDF, and image-only checks run inside the `parse_pdf` workflow stage so job creation stays fast and does not re-read the uploaded PDF twice.
 - Generated workflow routes live under `app/.well-known/workflow/` and are intentionally ignored.
+- Flashcard term extraction reuses one `Intl.Segmenter` and stopword set per language, so long books do not rebuild the same tokenizer helpers for every paragraph during the final workflow stage.
 
 ## Release Notes
 
