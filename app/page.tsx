@@ -7,6 +7,7 @@ import { DownloadCard } from '@/components/DownloadCard'
 import { ProgressFeed, type JobStatus } from '@/components/ProgressFeed'
 import { TargetLangSelect } from '@/components/TargetLangSelect'
 import { UploadBox } from '@/components/UploadBox'
+import { isTerminalJobStatus, shouldPollJobStatus } from '@/lib/job-polling'
 
 const POLL_INTERVAL_MS = 2000
 
@@ -22,31 +23,72 @@ export default function HomePage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const isProcessing =
-    jobStatus !== null && !['done', 'error'].includes(jobStatus.status) && !error
+  const isProcessing = jobStatus !== null && !isTerminalJobStatus(jobStatus.status) && !error
 
   useEffect(() => {
-    if (!jobStatus?.job_id || ['done', 'error'].includes(jobStatus.status)) {
+    if (!jobStatus?.job_id || isTerminalJobStatus(jobStatus.status) || error) {
       return
     }
 
-    const interval = window.setInterval(async () => {
+    const jobId = jobStatus.job_id
+    const currentStatus = jobStatus.status
+    let interval: number | null = null
+    let cancelled = false
+
+    async function refreshJobStatus() {
       try {
-        const response = await fetch(`/api/jobs/${jobStatus.job_id}`)
+        const response = await fetch(`/api/jobs/${jobId}`)
         if (!response.ok) {
           throw new Error('Unable to refresh job status.')
         }
         const payload = (await response.json()) as JobStatus
+        if (cancelled) {
+          return
+        }
+
         setJobStatus(payload)
+        if (isTerminalJobStatus(payload.status) && interval !== null) {
+          window.clearInterval(interval)
+          interval = null
+        }
       } catch (refreshError) {
         console.error(refreshError)
         setError('Something went wrong while tracking progress. Please refresh to continue.')
+        if (interval !== null) {
+          window.clearInterval(interval)
+          interval = null
+        }
+      }
+    }
+
+    function syncPollingToVisibility() {
+      if (!shouldPollJobStatus({ job_id: jobId, status: currentStatus }, false, document.visibilityState)) {
+        if (interval !== null) {
+          window.clearInterval(interval)
+          interval = null
+        }
+        return
+      }
+
+      if (interval === null) {
+        void refreshJobStatus()
+        interval = window.setInterval(() => {
+          void refreshJobStatus()
+        }, POLL_INTERVAL_MS)
+      }
+    }
+
+    syncPollingToVisibility()
+    document.addEventListener('visibilitychange', syncPollingToVisibility)
+
+    return () => {
+      cancelled = true
+      if (interval !== null) {
         window.clearInterval(interval)
       }
-    }, POLL_INTERVAL_MS)
-
-    return () => window.clearInterval(interval)
-  }, [jobStatus?.job_id, jobStatus?.status])
+      document.removeEventListener('visibilitychange', syncPollingToVisibility)
+    }
+  }, [error, jobStatus?.job_id, jobStatus?.status])
 
   async function createJob() {
     if (!selectedFile) {
