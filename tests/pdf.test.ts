@@ -68,4 +68,52 @@ describe('extractBookFromPdf', () => {
     expect(capturedData?.byteOffset).toBe(pdfBytes.byteOffset)
     expect(capturedData?.byteLength).toBe(pdfBytes.byteLength)
   })
+
+  it('rejects malformed / non-pdf bytes with a clean error instead of crashing', async () => {
+    vi.resetModules()
+    const { extractBookFromPdf } = await import('../lib/pdf')
+
+    await expect(
+      extractBookFromPdf(Buffer.from('this is definitely not a pdf'), 'bad.pdf'),
+    ).rejects.toThrow(/Unable to open PDF/)
+  })
+
+  it('maps an encrypted pdf to a clear, non-leaky error', async () => {
+    vi.resetModules()
+    vi.doMock('pdfjs-dist/legacy/build/pdf.mjs', () => ({
+      getDocument: () => ({
+        promise: Promise.reject(new Error('No password given (PasswordException)')),
+      }),
+    }))
+    vi.doMock('pdfjs-dist/legacy/build/pdf.worker.mjs', () => ({ WorkerMessageHandler: {} }))
+
+    const { extractBookFromPdf } = await import('../lib/pdf')
+
+    await expect(extractBookFromPdf(Buffer.from('x'), 'enc.pdf')).rejects.toThrow(
+      /Encrypted PDFs are not supported/,
+    )
+  })
+
+  it('rejects an image-only / no-text pdf cleanly', async () => {
+    vi.resetModules()
+    vi.doMock('pdfjs-dist/legacy/build/pdf.mjs', () => ({
+      getDocument: () => ({
+        promise: Promise.resolve({
+          numPages: 1,
+          getMetadata: async () => ({ info: {} }),
+          getPage: async () => ({
+            getViewport: () => ({ height: 100 }),
+            getTextContent: async () => ({ items: [] }),
+          }),
+        }),
+      }),
+    }))
+    vi.doMock('pdfjs-dist/legacy/build/pdf.worker.mjs', () => ({ WorkerMessageHandler: {} }))
+
+    const { extractBookFromPdf } = await import('../lib/pdf')
+
+    await expect(extractBookFromPdf(Buffer.from('x'), 'scan.pdf')).rejects.toThrow(
+      /does not contain extractable text/,
+    )
+  })
 })
