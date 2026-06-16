@@ -56,10 +56,15 @@ before declaring done. No time estimates. Pause only for HUMAN-GATED items (§ b
   also fixed mangled `TARGET_LANGS`; reconciled `.env` (removed dead S3/DB_MODE/STORAGE_BACKEND/
   TRANSLATION_ACCURACY keys). Local-only, gitignored, no secrets committed.
 - ☑ A2 Baseline `npm ci && npm run verify` GREEN on `main` @ 40dd7ae under Node 22.
-- ☐ A3 Land `origin/codex/cache-flashcard-tokenizers` (cache `Intl.Segmenter`; trivial README conflict).
-- ☐ A4 Land `origin/codex/pause-hidden-job-polling` (`lib/job-polling.ts` + page wiring; trivial README conflict).
-- ☐ A5 Land `origin/codex/single-query-job-updates` (single-write `updateJobRecord`; **real `lib/jobs.ts` conflict** — do last/carefully). NOTE: must reconcile with the download-token column added in Phase B.
-- ☐ A6 Prune `codex/avoid-pdf-buffer-copy`, `codex/refactor-repo-for-vercel-and-s3-deployment` (local+remote).
+- ☑ A3 Landed `codex/cache-flashcard-tokenizers` (merge `0336d94`). README folded; test_plan kept deleted.
+- ☑ A4 Landed `codex/pause-hidden-job-polling` (merge `b57c759`). Fixed an eslint exhaustive-deps warning the
+  branch introduced (fed `shouldPollJobStatus` derived primitives, not the whole object — behavior unchanged).
+- ☑ A5 Landed `codex/single-query-job-updates` (merge `9e71eb4`). `lib/jobs.ts` auto-merged correctly: A5's
+  single-write `updateJobRecord` + main's hardened `markWorkflowStarting` (stale-reclaim) both intact, verified.
+- ◐ A6 Local codex branches pruned (`avoid-pdf-buffer-copy`, `refactor-...` confirmed merged-to-main).
+  **Remote prune deferred to the Phase G push** (delete origin/codex/{avoid-pdf-buffer-copy,
+  refactor-repo-for-vercel-and-s3-deployment, cache-flashcard-tokenizers, pause-hidden-job-polling,
+  single-query-job-updates} only after `origin/main` has everything). Keep `render`, `software-testing`, `backup/pre-split-1c1a2e9`.
 
 **Phase B — red-team (reproduce w/ test → fix → keep as regression guard)**
 - ☐ B1 **Unauth download-by-job-id** (headline). `download/route.ts` streams private blob by id, no
@@ -100,7 +105,7 @@ before declaring done. No time estimates. Pause only for HUMAN-GATED items (§ b
 **Phase F — verify** ☐ `npm run verify` clean; `npm audit --omit=dev` shows only the documented Next/PostCSS moderate advisory. Do NOT jump to `next@16`.
 
 **Phase G — deploy + smoke** ☐ Push `origin/main` (only when green) → prod. Smoke per `docs/testing.md`:
-`/api/healthz`→`{ok:true}`; upload one small text PDF; watch poll to `done`; download EPUB + CSV. Record any missing Vercel resources in GO-LIVE. One tiny PDF of OpenAI spend authorized; no large books.
+`/api/healthz`→`{ok:true}`; upload one small text PDF; watch poll to `done`; download EPUB + CSV. Record any missing Vercel resources in GO-LIVE. One tiny PDF of OpenAI spend authorized; no large books. **After the push, prune the 5 remote codex branches** (deferred from A6).
 
 **Phase H — ship prep** ☐ `docs/launch/linkedin-post.md` (2–3 drafts, DO NOT POST) + finalize `CLAUDE.md` + GO-LIVE checklist.
 
@@ -110,7 +115,10 @@ before declaring done. No time estimates. Pause only for HUMAN-GATED items (§ b
 - **Job id entropy:** ids are `randomUUID().replace(/-/g,'')` = 32 hex / ~122 bits (CSPRNG) → not brute-forceable.
   So the download-auth risk is **capability leakage** (poll URLs, logs, history), not guessing. The token fix
   separates the download capability from the pollable id (defense-in-depth + ownership), which is the right minimal control.
-- **Decision:** work directly on `main` per Jason's published convention (no PR); push only at green checkpoints.
+- **Decision:** work directly on `main` per Jason's published convention (no PR). **Deploy timing:** accumulate
+  all phases as local gate-green commits and push **once at Phase G** (one coherent ship-ready prod deploy +
+  one smoke), rather than deploying a half-secured intermediate state. `origin/main` stays at `40dd7ae` until then.
+- **Phase A done (2026-06-16):** 3 codex merges + ledger; local main is +10 vs origin; gate green after each merge.
 - **Assumption:** Vercel project already has Blob/Neon/Queues/Workflow + provider env wired (the `.env.local`
   was created by Vercel CLI and references project `kindle-pdf-translation`). Live-deploy blockers, if any, go to GO-LIVE.
 - **Phase ordering note:** A5 (single-query-job-updates) rewrites `lib/jobs.ts`; the B1 download-token column
