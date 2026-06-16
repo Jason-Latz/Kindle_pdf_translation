@@ -19,7 +19,8 @@ describe('extractBookFromPdf', () => {
     const book = await extractBookFromPdf(pdfBytes, 'Elevator_Pitch.pdf')
 
     expect(book.pageCount).toBeGreaterThan(0)
-    expect(book.paragraphs.length).toBeGreaterThan(0)
+    expect(book.chapters.length).toBeGreaterThan(0)
+    expect(book.chapters.flatMap((chapter) => chapter.paragraphs).length).toBeGreaterThan(0)
     expect(book.title).toBeTruthy()
   })
 
@@ -61,12 +62,44 @@ describe('extractBookFromPdf', () => {
 
     const book = await extractBookFromPdf(pdfBytes, 'synthetic.pdf')
 
-    expect(book.paragraphs).toEqual(['Hello world'])
+    expect(book.chapters.flatMap((chapter) => chapter.paragraphs)).toEqual(['Hello world'])
     expect(capturedData).toBeInstanceOf(Uint8Array)
     expect(Buffer.isBuffer(capturedData)).toBe(false)
     expect(capturedData?.buffer).toBe(pdfBytes.buffer)
     expect(capturedData?.byteOffset).toBe(pdfBytes.byteOffset)
     expect(capturedData?.byteLength).toBe(pdfBytes.byteLength)
+  })
+
+  it('splits the book into chapters at large-font / keyword headings', async () => {
+    vi.resetModules()
+    vi.doMock('pdfjs-dist/legacy/build/pdf.mjs', () => ({
+      getDocument: () => ({
+        promise: Promise.resolve({
+          numPages: 1,
+          getMetadata: async () => ({ info: {} }),
+          getPage: async () => ({
+            getViewport: () => ({ height: 100 }),
+            getTextContent: async () => ({
+              items: [
+                { str: 'Chapter One', transform: [0, 0, 0, 20, 0, 80], width: 50 },
+                { str: 'alpha beta gamma delta', transform: [0, 0, 0, 10, 0, 60], width: 50 },
+                { str: 'Chapter Two', transform: [0, 0, 0, 20, 0, 44], width: 50 },
+                { str: 'epsilon zeta eta theta', transform: [0, 0, 0, 10, 0, 28], width: 50 },
+              ],
+            }),
+          }),
+        }),
+      }),
+    }))
+    vi.doMock('pdfjs-dist/legacy/build/pdf.worker.mjs', () => ({ WorkerMessageHandler: {} }))
+
+    const { extractBookFromPdf } = await import('../lib/pdf')
+
+    const book = await extractBookFromPdf(Buffer.from('x'), 'My Book.pdf')
+
+    expect(book.chapters.map((chapter) => chapter.title)).toEqual(['Chapter One', 'Chapter Two'])
+    expect(book.chapters[0].paragraphs).toEqual(['alpha beta gamma delta'])
+    expect(book.chapters[1].paragraphs).toEqual(['epsilon zeta eta theta'])
   })
 
   it('rejects malformed / non-pdf bytes with a clean error instead of crashing', async () => {

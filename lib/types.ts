@@ -54,15 +54,16 @@ export type QueueJobCreatedMessage = {
   jobId: string
 }
 
-export type ExtractedBook = {
+export type Chapter = {
+  title: string
   paragraphs: string[]
+}
+
+export type ExtractedBook = {
+  chapters: Chapter[]
   pageCount: number
   title: string
   author: string
-}
-
-export type TranslatedBook = {
-  paragraphs: string[]
 }
 
 export function toJobStatusResponse(row: JobRow): JobStatusResponse {

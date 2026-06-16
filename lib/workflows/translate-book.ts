@@ -44,18 +44,18 @@ async function parsePdfStep(jobId: string) {
   const pdfBytes = await readPrivateBlob(job.source_blob_path)
   const extracted = await extractBookFromPdf(pdfBytes, job.filename)
 
-  // Extracted paragraphs ride to the translate step as the durable step
-  // return value (journaled by the Workflow runtime) rather than a Blob
-  // round-trip — same crash/resume guarantee, one fewer advanced Blob op.
+  // Extracted chapters ride to the translate step as the durable step return
+  // value (journaled by the Workflow runtime) rather than a Blob round-trip —
+  // same crash/resume guarantee, one fewer advanced Blob op.
   return {
-    paragraphs: extracted.paragraphs,
+    chapters: extracted.chapters,
     title: extracted.title,
     author: extracted.author,
     pageCount: extracted.pageCount,
   }
 }
 
-async function translateStep(jobId: string, paragraphs: string[]) {
+async function translateStep(jobId: string, segments: string[]) {
   'use step'
 
   const [{ getJobRecord }, { getTranslationProvider }] = await Promise.all([
@@ -69,20 +69,22 @@ async function translateStep(jobId: string, paragraphs: string[]) {
   }
 
   const provider = getTranslationProvider()
-  const translations = await provider.translateBatch(paragraphs, {
+  const translations = await provider.translateBatch(segments, {
     srcLang: 'auto',
     tgtLang: job.target_lang,
   })
 
-  // Translated paragraphs feed both the epub and flashcards steps; hand
-  // them over as the durable step return value instead of writing
-  // translations.json to Blob (one fewer advanced op, two fewer reads).
   return {
     translations,
   }
 }
 
-async function buildEpubStep(jobId: string, translations: string[], title: string, author: string) {
+async function buildEpubStep(
+  jobId: string,
+  chapters: { title: string; paragraphs: string[] }[],
+  title: string,
+  author: string,
+) {
   'use step'
 
   const [{ getJobRecord }, { putPrivateBlob }, { buildEpubBuffer }, { buildJobArtifactPath }] =
@@ -98,7 +100,7 @@ async function buildEpubStep(jobId: string, translations: string[], title: strin
     throw new Error(`Job '${jobId}' was not found`)
   }
 
-  const epubBuffer = await buildEpubBuffer(translations, {
+  const epubBuffer = await buildEpubBuffer(chapters, {
     title,
     author,
     language: job.target_lang,
@@ -112,7 +114,7 @@ async function buildEpubStep(jobId: string, translations: string[], title: strin
   }
 }
 
-async function buildFlashcardsStep(jobId: string, translations: string[]) {
+async function buildFlashcardsStep(jobId: string, paragraphs: string[]) {
   'use step'
 
   const [{ getJobRecord }, { putPrivateBlob }, { getTranslationProvider }, { buildFlashcardsCsv }, { buildJobArtifactPath }] =
@@ -130,7 +132,7 @@ async function buildFlashcardsStep(jobId: string, translations: string[]) {
   }
 
   const provider = getTranslationProvider()
-  const csv = await buildFlashcardsCsv(translations, job.target_lang, provider)
+  const csv = await buildFlashcardsCsv(paragraphs, job.target_lang, provider)
 
   const flashcardsPath = buildJobArtifactPath(job.id, `${job.filename.replace(/\.pdf$/i, '')}.csv`)
   await putPrivateBlob(flashcardsPath, csv, 'text/csv')
@@ -158,7 +160,24 @@ export async function translateBookWorkflow(jobId: string) {
       pct: 35,
       error: null,
     })
-    const translated = await translateStep(jobId, parsed.paragraphs)
+    // Flatten chapters into one ordered segment list (each chapter's title
+    // followed by its paragraphs) so the whole book translates in a single
+    // journaled step, then re-split the results back into chapters in order.
+    const segments = parsed.chapters.flatMap((chapter) => [chapter.title, ...chapter.paragraphs])
+    const translated = await translateStep(jobId, segments)
+
+    const translatedChapters: { title: string; paragraphs: string[] }[] = []
+    let cursor = 0
+    for (const chapter of parsed.chapters) {
+      const translatedTitle = translated.translations[cursor] ?? chapter.title
+      cursor += 1
+      const translatedParagraphs = translated.translations.slice(
+        cursor,
+        cursor + chapter.paragraphs.length,
+      )
+      cursor += chapter.paragraphs.length
+      translatedChapters.push({ title: translatedTitle, paragraphs: translatedParagraphs })
+    }
 
     await updateJobRecordStep(jobId, {
       status: 'processing',
@@ -166,7 +185,7 @@ export async function translateBookWorkflow(jobId: string) {
       pct: 75,
       error: null,
     })
-    const epub = await buildEpubStep(jobId, translated.translations, parsed.title, parsed.author)
+    const epub = await buildEpubStep(jobId, translatedChapters, parsed.title, parsed.author)
 
     await updateJobRecordStep(jobId, {
       status: 'processing',
@@ -174,7 +193,8 @@ export async function translateBookWorkflow(jobId: string) {
       pct: 90,
       error: null,
     })
-    const flashcards = await buildFlashcardsStep(jobId, translated.translations)
+    const bodyParagraphs = translatedChapters.flatMap((chapter) => chapter.paragraphs)
+    const flashcards = await buildFlashcardsStep(jobId, bodyParagraphs)
 
     await updateJobRecordStep(jobId, {
       status: 'processing',

@@ -1,10 +1,15 @@
 import { getConfig } from '@/lib/config'
-import type { ExtractedBook } from '@/lib/types'
+import type { Chapter, ExtractedBook } from '@/lib/types'
 
 const HEADER_RATIO = 0.12
 const FOOTER_RATIO = 0.12
 const MIN_REPEAT_RATIO = 0.6
 const MIN_REPEAT_COUNT = 2
+const HEADING_FONT_RATIO = 1.25
+const HEADING_MAX_WORDS = 12
+// Chapter-ish heading keywords across the supported languages.
+const HEADING_KEYWORD =
+  /^(chapter|chapitre|cap[ií]tulo|kapitel|capitolo|hoofdstuk|part|parte|partie|book|livre|libro|prologue|pr[oó]logo|epilogue|ep[ií]logo|introduction|introducci[oó]n|introduzione|conclusion|conclusione|conclusi[oó]n)\b/i
 
 type PdfJsModule = typeof import('pdfjs-dist/legacy/build/pdf.mjs')
 type PdfWorkerModule = typeof import('pdfjs-dist/legacy/build/pdf.worker.mjs')
@@ -19,6 +24,7 @@ type TextLine = {
   y: number
   text: string
   key: string
+  fontSize: number
 }
 
 let pdfJsPromise: Promise<PdfJsModule> | null = null
@@ -119,6 +125,68 @@ function linesToParagraphs(lines: TextLine[]): string[] {
   return paragraphs.filter(Boolean)
 }
 
+function detectChapters(lines: TextLine[], bookTitle: string): Chapter[] {
+  // Body font size = the most common rounded size across the body; headings are
+  // detected as notably larger lines or lines starting with a chapter keyword.
+  const sizeCounts = new Map<number, number>()
+  for (const line of lines) {
+    const rounded = Math.round(line.fontSize)
+    if (rounded > 0) {
+      sizeCounts.set(rounded, (sizeCounts.get(rounded) ?? 0) + 1)
+    }
+  }
+
+  let bodyFont = 0
+  let bestCount = 0
+  for (const [size, count] of sizeCounts) {
+    if (count > bestCount) {
+      bestCount = count
+      bodyFont = size
+    }
+  }
+
+  const isHeading = (line: TextLine): boolean => {
+    const text = line.text.trim()
+    if (!text || text.split(/\s+/).length > HEADING_MAX_WORDS) {
+      return false
+    }
+    const largeFont = bodyFont > 0 && line.fontSize >= bodyFont * HEADING_FONT_RATIO
+    return largeFont || HEADING_KEYWORD.test(text)
+  }
+
+  const grouped: Array<{ title: string; lines: TextLine[] }> = []
+  const preface: TextLine[] = []
+  for (const line of lines) {
+    if (isHeading(line)) {
+      grouped.push({ title: line.text.trim(), lines: [] })
+    } else if (grouped.length === 0) {
+      preface.push(line)
+    } else {
+      grouped[grouped.length - 1].lines.push(line)
+    }
+  }
+
+  const chapters: Chapter[] = []
+  const prefaceParagraphs = linesToParagraphs(preface)
+  if (prefaceParagraphs.length > 0 && grouped.length > 0) {
+    chapters.push({ title: bookTitle, paragraphs: prefaceParagraphs })
+  }
+  for (const chapter of grouped) {
+    const paragraphs = linesToParagraphs(chapter.lines)
+    if (paragraphs.length > 0) {
+      chapters.push({ title: chapter.title, paragraphs })
+    }
+  }
+
+  // Fall back to one flat chapter when detection found no usable structure
+  // (no headings, or all false positives) — never worse than the old output.
+  if (chapters.length < 2) {
+    return [{ title: bookTitle, paragraphs: linesToParagraphs(lines) }]
+  }
+
+  return chapters
+}
+
 export async function extractBookFromPdf(pdfBytes: Uint8Array, filename: string): Promise<ExtractedBook> {
   const config = getConfig()
   const { getDocument } = await loadPdfJs()
@@ -180,7 +248,7 @@ export async function extractBookFromPdf(pdfBytes: Uint8Array, filename: string)
     const viewport = page.getViewport({ scale: 1 })
     const textContent = await page.getTextContent()
 
-    const grouped = new Map<number, Array<{ text: string; x: number; width: number }>>()
+    const grouped = new Map<number, Array<{ text: string; x: number; width: number; fontSize: number }>>()
 
     for (const item of textContent.items) {
       if (!('str' in item)) {
@@ -193,11 +261,13 @@ export async function extractBookFromPdf(pdfBytes: Uint8Array, filename: string)
       }
 
       const y = Math.round((viewport.height - item.transform[5]) / 2) * 2
+      const fontSize = Math.hypot(item.transform[2], item.transform[3]) || item.height || 0
       const bucket = grouped.get(y) ?? []
       bucket.push({
         text: raw,
         x: item.transform[4],
         width: item.width,
+        fontSize,
       })
       grouped.set(y, bucket)
     }
@@ -208,6 +278,7 @@ export async function extractBookFromPdf(pdfBytes: Uint8Array, filename: string)
         pageIndex: index,
         y,
         text: joinLine(parts),
+        fontSize: parts.reduce((max, part) => Math.max(max, part.fontSize), 0),
       }))
       .filter((line) => line.text)
 
@@ -254,14 +325,15 @@ export async function extractBookFromPdf(pdfBytes: Uint8Array, filename: string)
   const bodyLines = allLines.filter(
     (line) => !repeatedHeaders.has(line.key) && !repeatedFooters.has(line.key),
   )
-  const paragraphs = linesToParagraphs(bodyLines)
+  const chapters = detectChapters(bodyLines, title)
+  const totalParagraphs = chapters.reduce((sum, chapter) => sum + chapter.paragraphs.length, 0)
 
-  if (paragraphs.length === 0) {
+  if (totalParagraphs === 0) {
     throw new Error('The PDF appears to be image-only or empty')
   }
 
   return {
-    paragraphs,
+    chapters,
     pageCount,
     title,
     author,
