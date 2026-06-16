@@ -35,7 +35,7 @@ Required for the Vercel-native flow:
 - `POSTGRES_URL` or `DATABASE_URL`
 - `TRANSLATOR_PROVIDER=openai|hf`
 - `OPENAI_API_KEY` when using OpenAI
-- `HF_MODEL_ID` and optionally `HF_API_TOKEN` when using Hugging Face
+- `HF_MODEL_ID` and optionally `HF_API_TOKEN` when using Hugging Face (the HF provider is **experimental** / best-effort; OpenAI is the recommended production provider)
 
 Optional:
 

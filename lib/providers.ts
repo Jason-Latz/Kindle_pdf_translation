@@ -162,11 +162,48 @@ function extractHfText(payload: unknown): string {
   return JSON.stringify(payload)
 }
 
+// HF text models often wrap the JSON we asked for in prose or markdown fences.
+// Extract the outermost JSON array/object so parsing is resilient to that.
+function extractJsonBlock(text: string): string {
+  const trimmed = text.trim()
+  const firstBracket = trimmed.indexOf('[')
+  const firstBrace = trimmed.indexOf('{')
+
+  let start = -1
+  let closeChar = ''
+  if (firstBracket !== -1 && (firstBrace === -1 || firstBracket < firstBrace)) {
+    start = firstBracket
+    closeChar = ']'
+  } else if (firstBrace !== -1) {
+    start = firstBrace
+    closeChar = '}'
+  }
+
+  if (start === -1) {
+    return trimmed
+  }
+
+  const end = trimmed.lastIndexOf(closeChar)
+  return end > start ? trimmed.slice(start, end + 1) : trimmed
+}
+
+let hfExperimentalWarned = false
+function warnHfExperimental(): void {
+  if (!hfExperimentalWarned) {
+    hfExperimentalWarned = true
+    console.warn(
+      '[translator] The Hugging Face provider is experimental and best-effort; ' +
+        'model responses are parsed leniently. Prefer the OpenAI provider for production.',
+    )
+  }
+}
+
 function createHfProvider(): TranslationProvider {
   const config = getConfig()
   if (!config.hfModelId) {
     throw new Error('HF_MODEL_ID is required for the Hugging Face provider')
   }
+  warnHfExperimental()
 
   const endpoint = config.hfBaseUrl ?? `https://api-inference.huggingface.co/models/${config.hfModelId}`
 
@@ -202,7 +239,7 @@ function createHfProvider(): TranslationProvider {
           throw new Error(`Hugging Face inference failed with status ${response.status}`)
         }
 
-        const raw = extractHfText(await response.json())
+        const raw = extractJsonBlock(extractHfText(await response.json()))
         output.push(...parseTranslationPayload(raw, batch.length, 'Hugging Face'))
       }
 

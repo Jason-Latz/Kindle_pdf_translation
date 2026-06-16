@@ -93,3 +93,60 @@ describe('OpenAI provider translateBatch', () => {
     expect(mockCreate).not.toHaveBeenCalled()
   })
 })
+
+describe('Hugging Face provider translateBatch (experimental)', () => {
+  const fetchMock = vi.fn()
+
+  beforeEach(() => {
+    vi.stubGlobal('fetch', fetchMock)
+    fetchMock.mockReset()
+    process.env.TRANSLATOR_PROVIDER = 'hf'
+    process.env.HF_MODEL_ID = 'test/model'
+    process.env.HF_BASE_URL = 'http://localhost:9999/infer'
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    delete process.env.HF_MODEL_ID
+    delete process.env.HF_BASE_URL
+  })
+
+  function hfResponse(generatedText: string) {
+    return { ok: true, status: 200, json: async () => [{ generated_text: generatedText }] }
+  }
+
+  it('parses a clean JSON translations array', async () => {
+    fetchMock.mockResolvedValue(hfResponse('{"translations":["uno","dos"]}'))
+    const { getTranslationProvider } = await loadProviders()
+
+    const out = await getTranslationProvider().translateBatch(['one', 'two'], {
+      srcLang: 'en',
+      tgtLang: 'es',
+    })
+
+    expect(out).toEqual(['uno', 'dos'])
+  })
+
+  it('recovers JSON wrapped in prose / markdown fences', async () => {
+    fetchMock.mockResolvedValue(
+      hfResponse('Sure! Here you go:\n```json\n["uno","dos"]\n```\nHope that helps.'),
+    )
+    const { getTranslationProvider } = await loadProviders()
+
+    const out = await getTranslationProvider().translateBatch(['one', 'two'], {
+      srcLang: 'en',
+      tgtLang: 'es',
+    })
+
+    expect(out).toEqual(['uno', 'dos'])
+  })
+
+  it('throws (retryable) on a non-ok HF response', async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 503, json: async () => ({}) })
+    const { getTranslationProvider } = await loadProviders()
+
+    await expect(
+      getTranslationProvider().translateBatch(['one'], { srcLang: 'en', tgtLang: 'es' }),
+    ).rejects.toThrow(/status 503/)
+  })
+})
