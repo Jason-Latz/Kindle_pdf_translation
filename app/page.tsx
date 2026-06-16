@@ -8,6 +8,7 @@ import { ProgressFeed, type JobStatus } from '@/components/ProgressFeed'
 import { TargetLangSelect } from '@/components/TargetLangSelect'
 import { UploadBox } from '@/components/UploadBox'
 import { isTerminalJobStatus, shouldPollJobStatus } from '@/lib/job-polling'
+import type { SupportedLanguage } from '@/lib/languages'
 
 const POLL_INTERVAL_MS = 2000
 
@@ -17,7 +18,8 @@ function buildUploadPath(filename: string): string {
 }
 
 export default function HomePage() {
-  const [selectedLang, setSelectedLang] = useState('es')
+  const [languages, setLanguages] = useState<SupportedLanguage[]>([])
+  const [selectedLang, setSelectedLang] = useState('')
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null)
   const [downloadToken, setDownloadToken] = useState<string | null>(null)
@@ -25,6 +27,25 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null)
 
   const isProcessing = jobStatus !== null && !isTerminalJobStatus(jobStatus.status) && !error
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/languages')
+      .then((response) => (response.ok ? response.json() : Promise.reject(new Error('languages'))))
+      .then((payload: { languages: SupportedLanguage[] }) => {
+        if (cancelled) {
+          return
+        }
+        setLanguages(payload.languages)
+        setSelectedLang((current) => current || payload.languages[0]?.value || '')
+      })
+      .catch(() => {
+        // Leave the selector in its loading state if the list can't be fetched.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     if (!jobStatus?.job_id || isTerminalJobStatus(jobStatus.status) || error) {
@@ -176,6 +197,7 @@ export default function HomePage() {
             value={selectedLang}
             onChange={setSelectedLang}
             disabled={isSubmitting || isProcessing}
+            options={languages}
           />
           <UploadBox
             onFileSelected={(file) => {
@@ -189,7 +211,7 @@ export default function HomePage() {
             type="button"
             className="group relative inline-flex h-14 items-center justify-center overflow-hidden rounded-2xl bg-sky-500 text-lg font-semibold text-slate-950 shadow-lg shadow-sky-500/30 transition focus:outline-none focus:ring-2 focus:ring-sky-400 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-300"
             onClick={createJob}
-            disabled={isSubmitting || !selectedFile || isProcessing}
+            disabled={isSubmitting || !selectedFile || !selectedLang || isProcessing}
           >
             <span className="absolute inset-0 -z-10 bg-gradient-to-r from-sky-400 via-cyan-400 to-sky-500 opacity-0 transition group-hover:opacity-100" />
             {isSubmitting ? 'Starting…' : isProcessing ? 'Processing…' : 'Translate my book'}

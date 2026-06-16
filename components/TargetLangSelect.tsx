@@ -1,22 +1,20 @@
 'use client'
 
-const LANG_OPTIONS = [
-  { value: 'es', label: 'Spanish' },
-  { value: 'fr', label: 'French' },
-  { value: 'de', label: 'German' },
-  { value: 'it', label: 'Italian' },
-  { value: 'pt', label: 'Portuguese' },
-]
+import type { SupportedLanguage } from '@/lib/languages'
 
 export function TargetLangSelect({
   value,
   onChange,
   disabled,
+  options,
 }: {
   value: string
   onChange: (value: string) => void
   disabled?: boolean
+  options: SupportedLanguage[]
 }) {
+  const hasOptions = options.length > 0
+
   return (
     <label className="flex w-full flex-col gap-2 text-sm">
       <span className="text-xs uppercase tracking-[0.3em] text-slate-400">Target language</span>
@@ -25,13 +23,17 @@ export function TargetLangSelect({
           className="w-full appearance-none rounded-xl border border-slate-700 bg-slate-900/80 px-4 py-3 text-base font-medium text-slate-100 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-500/30 disabled:cursor-not-allowed disabled:opacity-60"
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          disabled={disabled}
+          disabled={disabled || !hasOptions}
         >
-          {LANG_OPTIONS.map((option) => (
-            <option key={option.value} value={option.value} className="bg-slate-900 text-slate-100">
-              {option.label}
-            </option>
-          ))}
+          {hasOptions ? (
+            options.map((option) => (
+              <option key={option.value} value={option.value} className="bg-slate-900 text-slate-100">
+                {option.label}
+              </option>
+            ))
+          ) : (
+            <option value="">Loading languages…</option>
+          )}
         </select>
         <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center text-slate-500">
           ▼

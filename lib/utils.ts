@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
+import { randomBytes, timingSafeEqual } from 'node:crypto'
 
 import { getConfig } from '@/lib/config'
 
@@ -18,11 +18,6 @@ export function ensurePdfFilename(filename: string): void {
   if (!filename.toLowerCase().endsWith('.pdf')) {
     throw new Error('Only PDF files are supported')
   }
-}
-
-export function buildSourceBlobPath(filename: string): string {
-  const config = getConfig()
-  return `${config.sourceUploadPrefix}/${randomUUID()}-${sanitizeFilename(filename)}`
 }
 
 export function buildJobArtifactPath(jobId: string, filename: string): string {
