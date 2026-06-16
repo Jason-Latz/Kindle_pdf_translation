@@ -97,6 +97,7 @@ https://<your-domain>/api/healthz
 - Generated workflow routes live under `app/.well-known/workflow/` and are intentionally ignored.
 - Flashcard term extraction reuses one `Intl.Segmenter` and stopword set per language, so long books do not rebuild the same tokenizer helpers for every paragraph during the final workflow stage.
 - The home page pauses `/api/jobs/:id` polling while the tab is hidden, then refreshes once immediately when the page becomes visible again. See [docs/job-status-polling.md](docs/job-status-polling.md).
+- Workflow stage progress updates intentionally use a single `UPDATE ... RETURNING` write in `lib/jobs.ts`; avoid reintroducing a read-before-write query on that hot path.
 
 ## Release Notes
 
