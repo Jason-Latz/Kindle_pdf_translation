@@ -2,24 +2,34 @@ import { z } from 'zod'
 
 import type { TranslationProviderId } from '@/lib/types'
 
+// Treat empty / whitespace-only env values as "unset". Vercel (and `.env`
+// files) commonly store optional vars as "", which would otherwise fail
+// .url()/.min(1)/.positive() and make getConfig() throw at runtime — a 500 on
+// every route that reads config (e.g. an empty OPENAI_BASE_URL).
+const emptyToUndefined = (value: unknown) =>
+  typeof value === 'string' && value.trim() === '' ? undefined : value
+
 const envSchema = z.object({
-  TRANSLATOR_PROVIDER: z.enum(['openai', 'hf']).default('openai'),
-  OPENAI_API_KEY: z.string().trim().min(1).optional(),
-  OPENAI_MODEL: z.string().trim().min(1).default('gpt-4.1-mini'),
-  OPENAI_BASE_URL: z.string().trim().url().optional(),
-  HF_API_TOKEN: z.string().trim().min(1).optional(),
-  HF_MODEL_ID: z.string().trim().min(1).optional(),
-  HF_BASE_URL: z.string().trim().url().optional(),
-  TARGET_LANGS: z.string().default('es,fr,de,it,pt'),
-  MAX_PDF_MB: z.coerce.number().int().positive().default(100),
-  MAX_PAGES: z.coerce.number().int().positive().default(600),
-  MAX_FLASHCARDS: z.coerce.number().int().positive().default(30),
-  MAX_TRANSLATION_BATCHES: z.coerce.number().int().positive().default(150),
-  POSTGRES_URL: z.string().trim().min(1).optional(),
-  DATABASE_URL: z.string().trim().min(1).optional(),
-  BLOB_READ_WRITE_TOKEN: z.string().trim().min(1).optional(),
-  VERCEL_REGION: z.string().trim().min(1).optional(),
-  QUEUE_REGION: z.string().trim().min(1).optional(),
+  TRANSLATOR_PROVIDER: z.preprocess(emptyToUndefined, z.enum(['openai', 'hf']).default('openai')),
+  OPENAI_API_KEY: z.preprocess(emptyToUndefined, z.string().trim().min(1).optional()),
+  OPENAI_MODEL: z.preprocess(emptyToUndefined, z.string().trim().min(1).default('gpt-4.1-mini')),
+  OPENAI_BASE_URL: z.preprocess(emptyToUndefined, z.string().trim().url().optional()),
+  HF_API_TOKEN: z.preprocess(emptyToUndefined, z.string().trim().min(1).optional()),
+  HF_MODEL_ID: z.preprocess(emptyToUndefined, z.string().trim().min(1).optional()),
+  HF_BASE_URL: z.preprocess(emptyToUndefined, z.string().trim().url().optional()),
+  TARGET_LANGS: z.preprocess(emptyToUndefined, z.string().default('es,fr,de,it,pt')),
+  MAX_PDF_MB: z.preprocess(emptyToUndefined, z.coerce.number().int().positive().default(100)),
+  MAX_PAGES: z.preprocess(emptyToUndefined, z.coerce.number().int().positive().default(600)),
+  MAX_FLASHCARDS: z.preprocess(emptyToUndefined, z.coerce.number().int().positive().default(30)),
+  MAX_TRANSLATION_BATCHES: z.preprocess(
+    emptyToUndefined,
+    z.coerce.number().int().positive().default(150),
+  ),
+  POSTGRES_URL: z.preprocess(emptyToUndefined, z.string().trim().min(1).optional()),
+  DATABASE_URL: z.preprocess(emptyToUndefined, z.string().trim().min(1).optional()),
+  BLOB_READ_WRITE_TOKEN: z.preprocess(emptyToUndefined, z.string().trim().min(1).optional()),
+  VERCEL_REGION: z.preprocess(emptyToUndefined, z.string().trim().min(1).optional()),
+  QUEUE_REGION: z.preprocess(emptyToUndefined, z.string().trim().min(1).optional()),
 })
 
 export type AppConfig = {
