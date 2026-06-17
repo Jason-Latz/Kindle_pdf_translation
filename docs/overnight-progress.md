@@ -102,11 +102,15 @@ the download-route / providers / job-service / jobs / languages / epub / pdf / f
 Next/PostCSS moderate + a high `esbuild` (GHSA-gv7w-rqvm-qjhr) via `@workflow/*` build tooling — a build/install-time
 Deno/registry vector not run by the deployed runtime, no in-range fix; both documented in `docs/release.md` (commit `3d6c924`). Did NOT jump to `next@16`.
 
-**Phase G — deploy + smoke — PARTIAL (blocker documented).** Pushed `origin/main` → `50b0ce9` (gate green); pruned the
-5 remote codex branches. **BUT the push did not auto-deploy** — live prod is the 2026-05-03 (43d) deployment and no
-build was triggered → GitHub→Vercel production auto-deploy is inactive. Live prod `GET /api/healthz` = `{ok:true}` (old
-code). Did NOT force a `vercel --prod` autonomously (a 43d-stale prod implies deliberate deploys). Remediation + the
-post-deploy pipeline smoke are in **GO-LIVE #1–3** (`CLAUDE.md`). Prod env vars verified set; Queues/Workflow toggles unverifiable via CLI.
+**Phase G — deploy + smoke — DEPLOYED; pipeline blocked by suspended Blob.** Pushed `origin/main` (now `c17673f`)
+and pruned the 5 remote codex branches. The push did **not** auto-deploy (GitHub→Vercel auto-deploy inactive; prod was
+43d stale), so — **after Jason explicitly said "deploy to prod now" (2026-06-17)** — deployed via `vercel --prod`.
+First smoke surfaced a **prod 500**: an empty `OPENAI_BASE_URL` env var failed `z.url().optional()` → `getConfig()`
+threw on every config route (latent, pre-existing). Fixed in code (empty-string→undefined preprocess across the env
+schema, commit `c17673f`), redeployed. Re-smoke: `/api/healthz` ✓, `/api/languages` ✓ (200, SSOT live), jobs-POST
+validation ✓ (400), download of a missing job ✓ (404, DB query works). **Full pipeline smoke BLOCKED:** the Blob
+upload returned `BlobStoreSuspendedError: This store has been suspended` — the Vercel Blob store is suspended
+(account/billing action → **GO-LIVE #1**). No prod state left behind (upload failed before any job/blob was created).
 
 **Phase H — ship prep — DONE.** `docs/launch/linkedin-post.md` (3 drafts, DO NOT POST); `CLAUDE.md` (durable anchor +
 GO-LIVE) finalized; this ledger finalized; morning report generated.

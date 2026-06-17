@@ -84,21 +84,20 @@ Pipeline: `app/page.tsx` → `POST /api/uploads/pdf` (Blob client-upload token) 
 
 ## Top risks / GO-LIVE (human-gated — needs Jason)
 
-1. **Deploy the new code — push did NOT auto-deploy.** `origin/main` is at the overnight work
-   (`50b0ce9`), but the live prod is still a deployment from **2026-05-03 (43d old)** and the push
-   triggered no build → the GitHub→Vercel **production auto-deploy is not active**. To go live,
-   either (a) reconnect / enable production auto-deploy in the Vercel project's Git settings and
-   re-trigger, or (b) from the repo run **`vercel --prod`** (CLI is authed as `jason-latz`, project
-   linked, gate is green, prod env configured). Left for you on purpose — a 43-day-stale prod
-   suggests deploys are deliberate, so I did not force a CLI deploy autonomously.
+1. **Reactivate the Vercel Blob store — it is SUSPENDED (blocks the whole pipeline).** The live
+   smoke uploaded a PDF and got `BlobStoreSuspendedError: This store has been suspended`. Uploads,
+   EPUB/flashcard writes, and downloads all need Blob, so nothing works end-to-end until you
+   un-suspend it in the Vercel dashboard (Storage → the Blob store → reactivate; this is an
+   account/billing action, so it was left for you). This almost certainly explains why prod sat
+   stale and unused. After reactivating, re-run the smoke in #3.
 2. **Confirm Queues + Workflow are enabled** on the Vercel project. Prod env vars are **verified
    set** (`TRANSLATOR_PROVIDER`, `OPENAI_API_KEY`, `BLOB_READ_WRITE_TOKEN`, `POSTGRES_URL`/
-   `DATABASE_URL`, `TARGET_LANGS`, limits — all Production), and Blob + Neon Postgres are wired,
-   but Queues/Workflow are platform toggles I can't verify via CLI. If a job sticks at `queued`,
-   the queue→workflow trigger isn't firing.
-3. **Run the live pipeline smoke after deploying** (`docs/testing.md`): `GET /api/healthz` already
-   returns `{ok:true}` on live prod; after the new deploy, upload a small text PDF and confirm the
-   job polls `queued → … → done`, then download the EPUB + flashcards CSV. (Set scalar env with
+   `DATABASE_URL`, `TARGET_LANGS`, limits — all Production), and Neon Postgres is wired. I couldn't
+   reach the queue→workflow stage (the smoke stopped at the suspended Blob upload), so verify these
+   platform toggles too — if a job sticks at `queued` after Blob is back, the trigger isn't firing.
+3. **Re-run the live pipeline smoke after reactivating Blob** (`docs/testing.md`): upload a small
+   text PDF and confirm the job polls `queued → … → done`, then download the EPUB + flashcards CSV
+   (download URLs need `&token=<download_token>` from the create response). (Set scalar env with
    `vercel env add --value …`, not stdin piping.)
 - **Rotate the dead AWS keys** that were in the local `.env` (removed from the file; revoke at
   source). Optional: rotate OpenAI/HF/Neon/Blob secrets as hygiene (never committed).
@@ -110,9 +109,10 @@ Pipeline: `app/page.tsx` → `POST /api/uploads/pdf` (Blob client-upload token) 
 
 Overnight hardening run completed **2026-06-16**: landed 3 codex branches; fixed the headline
 unauthenticated-download IDOR + 7 more red-team items; added chaptered EPUB + richer flashcards;
-brought the orchestration layer to real test coverage (58 tests). All pushed to `main` (`50b0ce9`),
-gate green. **Not yet live** — see GO-LIVE #1 (push did not auto-deploy). See
-`docs/overnight-progress.md` for the full ledger and `docs/security.md` for the threat model.
+brought the orchestration layer to real test coverage (61 tests). Pushed to `main` (`c17673f`) and
+**deployed to prod** via `vercel --prod`; static/config/API routes verified live (a prod 500 from an
+empty `OPENAI_BASE_URL` was caught and fixed). The end-to-end pipeline is **blocked by a suspended
+Vercel Blob store** — see GO-LIVE #1. See `docs/overnight-progress.md` and `docs/security.md`.
 
 ## Change log
 
